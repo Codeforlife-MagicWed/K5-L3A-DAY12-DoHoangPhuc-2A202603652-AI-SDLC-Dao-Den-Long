@@ -72,6 +72,7 @@ export function createAudioEngine(initialVolume = 0.65) {
     hit: () => playTone(160, 0.28, "sawtooth", 0.22, 65),
     jump: () => playTone(280, 0.14, "sine", 0.12, 460),
     dash: () => playTone(420, 0.14, "triangle", 0.15, 760),
+    slash: () => playTone(740, 0.16, "triangle", 0.2, 290),
     shadeSpawn: () => playTone(130, 0.35, "sawtooth", 0.12, 95),
     countdown: () => playTone(880, 0.09, "square", 0.08),
     windWarn: () => playTone(320, 0.45, "sine", 0.12, 220),

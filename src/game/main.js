@@ -25,8 +25,10 @@ const volSlider = document.getElementById("vol-slider");
 const volVal = document.getElementById("vol-val");
 const sensSlider = document.getElementById("sens-slider");
 const sensVal = document.getElementById("sens-val");
+const cbToggle = document.getElementById("cb-toggle");
 
 const hudFlames = document.getElementById("hud-flames");
+const hudHpFill = document.getElementById("hud-hp-fill");
 const hudCharm = document.getElementById("hud-charm");
 const hudCharmVal = document.getElementById("hud-charm-val");
 const hudNightLabel = document.getElementById("hud-night-label");
@@ -35,11 +37,12 @@ const hudWind = document.getElementById("hud-wind");
 const hudLanterns = document.getElementById("hud-lanterns");
 const hudScore = document.getElementById("hud-score");
 const hudCarried = document.getElementById("hud-carried");
+const hudCap = document.getElementById("hud-cap");
 const hudDash = document.getElementById("hud-dash");
 const hudPulse = document.getElementById("hud-pulse");
 const moteSlotsEl = document.getElementById("mote-slots");
 
-for (let i = 0; i < 10; i++) {
+for (let i = 0; i < 20; i++) {
   const slot = document.createElement("div");
   slot.className = "mote-slot";
   moteSlotsEl.appendChild(slot);
@@ -54,6 +57,8 @@ volSlider.value = String(Math.round(settings.volume * 100));
 volVal.textContent = `${volSlider.value}%`;
 sensSlider.value = String(Math.round(settings.sensitivity * 100));
 sensVal.textContent = settings.sensitivity.toFixed(2);
+cbToggle.checked = settings.colorblind;
+document.body.classList.toggle("colorblind", settings.colorblind);
 
 volSlider.addEventListener("input", () => {
   settings.volume = Number(volSlider.value) / 100;
@@ -68,6 +73,12 @@ sensSlider.addEventListener("input", () => {
   saveSettings(settings);
 });
 
+cbToggle.addEventListener("change", () => {
+  settings.colorblind = cbToggle.checked;
+  document.body.classList.toggle("colorblind", settings.colorblind);
+  saveSettings(settings);
+});
+
 // UI Screen state: "menu" | "intro" | "playing" | "paused" | "settings" | "result" | "dawn"
 let screenMode = "menu";
 let settingsReturnTo = "menu";
@@ -75,8 +86,12 @@ let currentNight = 1;
 let campaignScore = 0;
 let sim = createSimulation({ seed: 2026, night: 1, creativeVariants: true });
 let camYawDeg = 0;
+let camPitchDeg = 34;
 let isDragging = false;
+let dragMoved = false;
 let lastMouseX = 0;
+let lastMouseY = 0;
+let slashQueued = false;
 let accumulator = 0;
 let lastTime = performance.now();
 let lastCountdownSec = -1;
@@ -125,10 +140,11 @@ function openNightIntro(night) {
   currentNight = night;
   screenMode = "intro";
   const map = getNightMap(night);
+  const reqLit = Math.ceil(TUNING.win_ratio * map.lanterns.length);
   showOverlay({
     title: map.name,
     desc: map.introQuote,
-    stats: `Mục tiêu: Thắp ${map.lanterns.length} Đèn Lồng Lớn · Thời gian: ${Math.floor(map.durationS / 60)}m ${map.durationS % 60}s`,
+    stats: `Mục tiêu: Giữ tối thiểu ${reqLit}/${map.lanterns.length} đèn sáng tới bình minh · Thời gian: ${Math.floor(map.durationS / 60)}m ${map.durationS % 60}s`,
     primaryText: `Vào ${map.name}`,
     showMenu: true
   });
@@ -234,20 +250,35 @@ window.addEventListener("keyup", (e) => {
 });
 
 canvas.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
   isDragging = true;
+  dragMoved = false;
   lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
 });
 
-window.addEventListener("mouseup", () => {
+window.addEventListener("mouseup", (e) => {
+  if (isDragging && !dragMoved && e.button === 0 && screenMode === "playing") {
+    slashQueued = true;
+  }
   isDragging = false;
 });
 
 window.addEventListener("mousemove", (e) => {
   if (!isDragging || screenMode !== "playing") return;
   const dx = e.clientX - lastMouseX;
+  const dy = e.clientY - lastMouseY;
+  if (Math.hypot(dx, dy) > 4) dragMoved = true;
   lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
   camYawDeg -= dx * settings.sensitivity;
+  camPitchDeg = Math.min(82, Math.max(18, camPitchDeg + dy * settings.sensitivity * 0.8));
 });
+
+canvas.addEventListener("wheel", (e) => {
+  if (screenMode !== "playing") return;
+  camPitchDeg = Math.min(82, Math.max(18, camPitchDeg + e.deltaY * 0.04));
+}, { passive: true });
 
 function buildInputFrame() {
   let mx = 0;
@@ -259,6 +290,9 @@ function buildInputFrame() {
   if (keys.has("KeyQ")) camYawDeg += 1.8;
   if (keys.has("KeyC")) camYawDeg -= 1.8;
 
+  const slashEdge = slashQueued || keys.has("KeyJ") || keys.has("KeyX");
+  slashQueued = false;
+
   return {
     move: [mx, mz],
     cam_yaw_deg: camYawDeg,
@@ -266,6 +300,7 @@ function buildInputFrame() {
     dash: keys.has("ShiftLeft") || keys.has("ShiftRight"),
     interact: keys.has("KeyE"),
     pulse: keys.has("KeyF"),
+    slash: slashEdge,
     pause: false
   };
 }
@@ -279,15 +314,20 @@ function formatMMSS(sec) {
 
 function updateHud(state, arrowInfo) {
   const litCount = state.lanterns.filter((l) => l.lit).length;
+  const reqLit = Math.ceil(TUNING.win_ratio * state.lanterns.length);
   hudFlames.textContent = `${state.player.flames} / ${TUNING.flames}`;
+  const hpPct = Math.max(0, Math.min(100, (state.player.flames / TUNING.flames) * 100));
+  hudHpFill.style.width = `${hpPct}%`;
   hudNightLabel.textContent = state.map.name;
-  hudLanterns.textContent = `${litCount} / ${state.lanterns.length}`;
+  hudLanterns.textContent = `${litCount} / ${state.lanterns.length} (cần ${reqLit})`;
   hudScore.textContent = String(campaignScore + state.score);
   hudCarried.textContent = String(state.player.carried);
+  hudCap.textContent = String(state.player.capacity);
 
   const secCeil = Math.ceil(state.timeLeftS);
-  hudTime.textContent = formatMMSS(secCeil);
-  hudTime.classList.toggle("danger", secCeil <= 30);
+  const isDanger = secCeil <= 30;
+  hudTime.textContent = `${isDanger && settings.colorblind ? "⚠ " : ""}${formatMMSS(secCeil)}`;
+  hudTime.classList.toggle("danger", isDanger);
   if (secCeil <= 10 && secCeil > 0 && secCeil !== lastCountdownSec) {
     lastCountdownSec = secCeil;
     audio.countdown();
@@ -317,6 +357,7 @@ function updateHud(state, arrowInfo) {
 
   const slots = moteSlotsEl.children;
   for (let i = 0; i < slots.length; i++) {
+    slots[i].classList.toggle("hidden", i >= state.player.capacity);
     slots[i].classList.toggle("filled", i < state.player.carried);
   }
 
@@ -336,12 +377,18 @@ function updateHud(state, arrowInfo) {
 
   let hint = "";
   for (const l of state.lanterns) {
-    if (!l.lit && distXZ(state.player.pos, l.pos) <= TUNING.interact_radius) {
-      hint = `E — Nạp ánh sáng (${l.deposited}/${TUNING.lantern_cost})`;
-      break;
+    if (distXZ(state.player.pos, l.pos) <= TUNING.interact_radius) {
+      if (!l.lit) {
+        const cost = l.ever_lit ? TUNING.relight_cost : TUNING.lantern_cost;
+        hint = `E — Thắp đèn (${l.deposited}/${cost})`;
+        break;
+      } else if (l.fuel < TUNING.fuel_max) {
+        hint = `E — Châm dầu (${Math.round(l.fuel)}/${TUNING.fuel_max})`;
+        break;
+      }
     }
   }
-  if (!hint && state.lanterns.some((l) => l.lit && distXZ(state.player.pos, l.pos) <= TUNING.safe_radius)) {
+  if (!hint && state.lanterns.some((l) => l.lit && l.fuel >= TUNING.low_fuel_threshold && distXZ(state.player.pos, l.pos) <= TUNING.safe_radius)) {
     hint = "Vùng sáng an toàn";
   }
   promptEl.textContent = hint;
@@ -366,6 +413,9 @@ function handleEvents(events, state) {
     else if (ev.name === "pulse") {
       world.triggerPulseEffect();
       audio.pulse();
+    } else if (ev.name === "creative_slash") {
+      world.triggerSlashEffect();
+      audio.slash();
     } else if (ev.name === "player_hit") audio.hit();
     else if (ev.name === "dash") audio.dash();
     else if (ev.name === "shade_spawned") audio.shadeSpawn();
@@ -423,7 +473,7 @@ function frameLoop(now) {
   }
 
   const renderState = sim.getRenderState();
-  const { arrow } = world.syncEntities(renderState, now / 1000, camYawDeg);
+  const { arrow } = world.syncEntities(renderState, now / 1000, camYawDeg, camPitchDeg, settings.colorblind);
   if (screenMode === "playing") updateHud(renderState, arrow);
 
   requestAnimationFrame(frameLoop);

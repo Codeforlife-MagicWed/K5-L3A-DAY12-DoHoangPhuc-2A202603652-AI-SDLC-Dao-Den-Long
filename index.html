@@ -14,8 +14,11 @@
     <div id="hud" class="hud hidden">
       <div class="hud-card">
         <div class="hud-row">
-          <span class="label">Ngọn Lửa:</span>
+          <span class="label">Máu (Ngọn Lửa):</span>
           <span id="hud-flames" class="val gold">3 / 3</span>
+        </div>
+        <div class="hp-bar-track">
+          <div id="hud-hp-fill" class="hp-bar-fill" style="width: 100%"></div>
         </div>
         <div id="hud-charm" class="hud-row hidden">
           <span class="label">Bùa Gió:</span>
@@ -35,10 +38,10 @@
       </div>
     </div>
 
-    <!-- Bottom HUD: 10-slot Firefly Bar + Cooldowns -->
+    <!-- Bottom HUD: Dynamic Firefly Bar (10..20) + Cooldowns -->
     <div id="hud-bottom" class="hud-bottom hidden">
       <div class="mote-bar-wrap">
-        <div class="mote-bar-label">Đom đóm: <span id="hud-carried">0</span> / 10</div>
+        <div class="mote-bar-label">Đom đóm: <span id="hud-carried">0</span> / <span id="hud-cap">10</span></div>
         <div id="mote-slots" class="mote-slots"></div>
       </div>
       <div class="cd-box">
@@ -59,8 +62,8 @@
           Thu thập đom đóm, né Bóng Mực và Gió Lạc, thắp sáng mọi Đèn Lồng Lớn trước bình minh!
         </p>
         <div id="controls-box" class="controls-box">
-          <div><b>WASD / Mũi tên:</b> Di chuyển · <b>Kéo chuột / Q,C:</b> Xoay camera</div>
-          <div><b>Space:</b> Nhảy · <b>Shift:</b> Lướt (Dash) · <b>E:</b> Nạp đèn · <b>F:</b> Tỏa Sáng · <b>Esc/P:</b> Tạm dừng</div>
+          <div><b>WASD / Mũi tên:</b> Di chuyển · <b>Kéo chuột:</b> Xoay & nghiêng góc nhìn trên xuống</div>
+          <div><b>Space:</b> Nhảy · <b>Shift:</b> Lướt · <b>E:</b> Nạp đèn · <b>F:</b> Tỏa Sáng · <b>Click / J:</b> Chém ánh sáng · <b>Esc/P:</b> Tạm dừng</div>
         </div>
 
         <div id="settings-box" class="settings-box hidden">
@@ -71,6 +74,10 @@
           <div class="setting-row">
             <label for="sens-slider">Độ nhạy chuột: <span id="sens-val">0.35</span></label>
             <input id="sens-slider" type="range" min="10" max="100" value="35" />
+          </div>
+          <div class="setting-row">
+            <label for="cb-toggle">Bảng màu dễ phân biệt (mù màu)</label>
+            <input id="cb-toggle" type="checkbox" />
           </div>
         </div>
 
