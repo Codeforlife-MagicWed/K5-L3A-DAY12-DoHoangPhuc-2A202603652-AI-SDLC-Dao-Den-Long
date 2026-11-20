@@ -1,21 +1,18 @@
-# AGENTS.md — Đảo Đèn Lồng (Contract v1.1)
+# AGENTS.md — Đảo Đèn Lồng (Contract v1.2)
 
 ## Lệnh chuẩn của dự án
 - Cài đặt & build: `npm install && npm run build`
 - Chạy game 3D (Vite): `npm run dev`
-- Chạy headless theo Test Contract v1.1 (`--night 1|2|3`): `node src/headless/cli.js --seed <int> --night <1|2|3> --ticks <int> --out <file.jsonl>`
+- Chạy headless theo Test Contract v1.2 (`--night 1|2|3`): `node src/headless/cli.js --seed <int> --night <1|2|3> --ticks <int> --out <file.jsonl>`
 - Chạy toàn bộ test & kiểm chứng contract + regression: `npm test`
 
 ## Kiến trúc bắt buộc
-- `src/sim/` chứa **toàn bộ logic game thuần** (60 tick/s, thứ tự 12 bước mỗi tick, PRNG tất định theo `--seed`, không phụ thuộc DOM/WebGL/Three.js).
-- `src/sim/maps.js` định nghĩa 3 bản đồ chuẩn (Đêm 1 Đảo Bến, Đêm 2 Đảo Cau, Đêm 3 Đảo Chuông), điểm sinh chuẩn, cầu tre, bục nhảy, dốc 3 tầng và tháp chuông.
-- `src/headless/` là CLI đọc `--scenario`, `--inputs` (`dash`, `pause`) và xuất JSONL chuẩn `Contract v1.1`.
-- `src/game/` là lớp hiển thị 3D (Three.js, bảng màu chuẩn, âm thanh WebAudio, HUD, 3 Đêm, cài đặt lưu `localStorage`).
-- Sáng tạo thêm (đom đóm nhỏ/vừa/lớn) **chỉ bật ở giao diện 3D (`creativeVariants: true`)**, tắt ở chế độ headless.
+- `src/sim/` chứa **toàn bộ logic game thuần** (60 tick/s, thứ tự 12 bước mỗi tick, nhiên liệu tính theo đơn vị nguyên `1/60`, PRNG tất định).
+- Luật Phase 3 (`v1.2`): đèn hao dầu `1/s`, Bóng Mực `wander` hút dầu `5/s` ở đèn `fuel < 30` (`drain`), thắng khi sống tới bình minh với `lit >= ceil(0.6 * total)` (`dawn_survived`), sức chứa tăng dần `10 + 2 * successful_lights` (tối đa `20`).
+- `src/game/` là lớp hiển thị 3D (thanh dầu đèn, nhấp nháy `fuel < 30`, đèn tắt xẹp `20%` + vết rách, chế độ mù màu `#00B3FF` / `#FFFFFF` + `⚠`).
+- Sáng tạo thêm (đom đóm nhỏ/vừa/lớn, chém ánh sáng `slash`, tạo hình mây, sông suối) **không làm đổi đầu ra headless** của Test Contract.
 
 ## Quy ước & Điều cấm
-- Đọc `game.contract.json` trước khi sửa thông số; số chuẩn Phần 1 của Ticket-02 và `game.contract.json` phải khớp tuyệt đối.
-- Đảm bảo điểm `+10` tính khi **nạp đom đóm vào đèn**, không phải lúc nhặt.
-- Không tắt test cũ âm thầm; test cũ thay đổi do chuẩn hóa số liệu phải cập nhật kèm lý do trong `docs/notes/phase-2.md`.
+- Đọc `game.contract.json` (`v1.2`) trước khi sửa thông số; số trong code và contract phải khớp tuyệt đối.
+- Không skip/xóa test cũ âm thầm: mọi test bị luật mới thay thế phải ghi rõ lý do trong `docs/notes/phase-3-adr.md` và `CHANGELOG.md`.
 - Không kết thúc phase khi `npm test` hoặc `npm run build` còn lỗi.
-- Không commit `.env`, API key hoặc token.
