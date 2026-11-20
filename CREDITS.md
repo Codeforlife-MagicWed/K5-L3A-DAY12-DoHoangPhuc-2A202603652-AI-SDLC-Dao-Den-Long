@@ -5,7 +5,8 @@
 - Toàn bộ hiệu ứng âm thanh và nhạc nền đêm được tổng hợp bằng **Web Audio API** (không dùng tệp âm thanh bên ngoài).
 
 ## Thư viện & Công cụ
-- **Three.js** (`MIT License`) — dựng cảnh 3D WebGL.
+- **Three.js** (`MIT License`) — dựng cảnh 3D WebGL (tận dụng `InstancedMesh` & `BufferGeometryUtils`).
 - **Vite** (`MIT License`) — công cụ phát triển và đóng gói web tĩnh.
-- **Node.js** (`MIT License`) — môi trường chạy chế độ headless và kiểm thử tự động (`node:test`).
-- **AI Assistant (Antigravity / Gemini)** — hỗ trợ lập kế hoạch, viết mã, viết kiểm thử và tài liệu dưới sự điều phối và kiểm chứng của học viên.
+- **Puppeteer** (`Apache-2.0 License`) — tự động hóa trình duyệt Chromium `1280×720` để chạy `bench.js` đo FPS & bộ nhớ.
+- **Node.js** (`MIT License`) — môi trường chạy server cục bộ, chế độ headless, soak test và kiểm thử tự động (`node:test`).
+- **AI Assistant (Antigravity / Gemini)** — hỗ trợ lập kế hoạch, viết mã, tối ưu đồ họa/hiệu năng, viết kiểm thử và tài liệu dưới sự điều phối và kiểm chứng của học viên.

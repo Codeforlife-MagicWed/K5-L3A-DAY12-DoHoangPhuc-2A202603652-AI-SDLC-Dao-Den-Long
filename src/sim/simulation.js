@@ -8,9 +8,35 @@ import {
   round1,
   round3
 } from "./config.js";
-import { getNightMap, isWithinPlayableXZ, resolvePlayerTerrain } from "./maps.js";
+import { getNightMap, getSurfaceHeights, isWithinPlayableXZ, resolvePlayerTerrain } from "./maps.js";
 import { createPRNG } from "./prng.js";
 import { validateScenario } from "./validators.js";
+
+function findMatchingSurfaceY(night, x, z, curY, maxStep = 0.7) {
+  const heights = getSurfaceHeights(night, x, z);
+  if (heights.length === 0) return null;
+  if (night === 3 && heights.some((h) => h > curY + 0.5 && curY < h - 0.5)) return null;
+  let best = null;
+  let bestDiff = Infinity;
+  for (const h of heights) {
+    const diff = Math.abs(h - curY);
+    if (diff <= maxStep && diff < bestDiff) {
+      bestDiff = diff;
+      best = h;
+    }
+  }
+  return best;
+}
+
+function updateEntityTerrainY(pos, night, maxStep) {
+  if (night !== 3) return;
+  const heights = getSurfaceHeights(night, pos[0], pos[2]);
+  if (heights.length === 0) return;
+  const topY = Math.max(...heights);
+  const dy = topY - pos[1];
+  if (Math.abs(dy) <= maxStep) pos[1] = topY;
+  else pos[1] += Math.sign(dy) * maxStep;
+}
 
 function pickFireflyType(prng, creativeVariants) {
   if (!creativeVariants) return FIREFLY_TYPES.small;
@@ -64,7 +90,7 @@ function clampShadeOutsideSafeLanterns(shade, lanterns, playerPos) {
 /**
  * Creates a deterministic 60Hz simulation instance conforming to Test Contract v1.2.
  */
-export function createSimulation({ seed = 1, night = 1, scenario = null, creativeVariants = false } = {}) {
+export function createSimulation({ seed = 1, night = 1, scenario = null, creativeVariants = false, benchmarkMode = false } = {}) {
   const map = getNightMap(night);
   const parsedScenario = validateScenario(scenario);
   const prng = createPRNG(seed);
@@ -97,11 +123,11 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
     ever_lit: false,
     relit_count: 0
   }));
+  const lanternById = new Map(lanterns.map((l) => [l.id, l]));
 
   if (parsedScenario.lanterns) {
-    const byId = new Map(lanterns.map((l) => [l.id, l]));
     for (const patch of parsedScenario.lanterns) {
-      const target = byId.get(patch.id);
+      const target = lanternById.get(patch.id);
       if (!target) continue;
       if (patch.pos !== undefined) target.pos = [...patch.pos];
       if (patch.deposited !== undefined) target.deposited = patch.deposited;
@@ -159,7 +185,40 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
     });
   }
 
-  if (parsedScenario.motes !== undefined) {
+  if (benchmarkMode) {
+    // Ticket-04 Benchmark Scene: L1-L3 lit (fuel 100), 100 motes, 200 wander shades
+    for (let i = 0; i < 3 && i < lanterns.length; i++) {
+      lanterns[i].lit = true;
+      lanterns[i].ever_lit = true;
+      lanterns[i].fuelUnits = CONSTANTS.FUEL_MAX_UNITS;
+    }
+    for (let i = 0; i < 100; i++) {
+      const angle = prng.range(0, Math.PI * 2);
+      const r = Math.sqrt(prng.range(9, 38 * 38));
+      spawnMoteAtPoint([r * Math.cos(angle), 0, r * Math.sin(angle)], "random", null);
+    }
+    for (let i = 0; i < 200; i++) {
+      const angle = prng.range(0, Math.PI * 2);
+      const r = Math.sqrt(prng.range(64, 38 * 38));
+      const shade = {
+        id: `S${nextShadeNum++}`,
+        pos: [r * Math.cos(angle), 0, r * Math.sin(angle)],
+        state: "wander",
+        stateTicksLeft: 0,
+        targetLanternId: null,
+        drainEmitTicks: 0,
+        pulsePushTicks: 0,
+        pulsePushDir: [1, 0],
+        safePushTicks: 0,
+        safePushLantern: null,
+        recoilDir: [1, 0],
+        wanderAngle: prng.range(0, Math.PI * 2),
+        justSpawned: false
+      };
+      clampShadeOutsideSafeLanterns(shade, lanterns, player.pos);
+      shades.push(shade);
+    }
+  } else if (parsedScenario.motes !== undefined) {
     for (const item of parsedScenario.motes) {
       const pos = Array.isArray(item) ? item : item.pos;
       const id = !Array.isArray(item) && item.id ? item.id : null;
@@ -182,13 +241,14 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
         const pt = map.moteSpawnPoints[Math.floor(prng.next() * map.moteSpawnPoints.length)];
         const jitterX = pt[0] + prng.range(-3.5, 3.5);
         const jitterZ = pt[2] + prng.range(-3.5, 3.5);
-        const candidate = isWithinPlayableXZ(night, jitterX, jitterZ) ? [jitterX, pt[1], jitterZ] : pt;
+        const surfY = findMatchingSurfaceY(night, jitterX, jitterZ, pt[1], 0.6);
+        const candidate = surfY !== null ? [jitterX, surfY, jitterZ] : pt;
         spawnMoteAtPoint(candidate, "random", null);
       }
     }
   }
 
-  if (parsedScenario.shades !== undefined) {
+  if (!benchmarkMode && parsedScenario.shades !== undefined) {
     for (const item of parsedScenario.shades) {
       const id = item.id ?? `S${nextShadeNum++}`;
       const match = /^S(\d+)$/.exec(id);
@@ -311,11 +371,12 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
       }
     }
 
-    // Lantern natural decay + shade drain (Step 2)
-    const lanternById = new Map(lanterns.map((l) => [l.id, l]));
-    for (const l of lanterns) {
-      if (l.lit) {
-        l.fuelUnits = Math.max(0, l.fuelUnits - CONSTANTS.FUEL_DECAY_UNITS);
+    // Lantern natural decay + shade drain (disabled in benchmarkMode)
+    if (!benchmarkMode) {
+      for (const l of lanterns) {
+        if (l.lit) {
+          l.fuelUnits = Math.max(0, l.fuelUnits - CONSTANTS.FUEL_DECAY_UNITS);
+        }
       }
     }
 
@@ -764,9 +825,9 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
         const dot = d > 1e-4 ? (dx / d) * player.facing[0] + (dz / d) * player.facing[2] : 1;
         if (dot >= -0.25) {
           s.pulsePushDir = d > 1e-4 ? [dx / d, dz / d] : [player.facing[0], player.facing[2]];
-          s.pulsePushTicks = 10;
+          s.pulsePushTicks = 15;
           s.state = "stunned";
-          s.stateTicksLeft = 60;
+          s.stateTicksLeft = 180; // Increased stun duration to 3.0s (180 ticks)
           s.targetLanternId = null;
           s.drainEmitTicks = 0;
           hitIds.push(s.id);
@@ -801,8 +862,6 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
   }
 
   function moveShadesAndDrifters() {
-    const lanternById = new Map(lanterns.map((l) => [l.id, l]));
-
     for (const s of shades) {
       if (s.justSpawned || s.state === "spawning") continue;
 
@@ -816,6 +875,7 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
             s.pos[2] = nz;
           }
         }
+        updateEntityTerrainY(s.pos, night, 6.0 * DT);
         continue;
       }
 
@@ -827,6 +887,7 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
           s.pos[0] = nx;
           s.pos[2] = nz;
         }
+        updateEntityTerrainY(s.pos, night, 6.0 * DT);
         continue;
       }
 
@@ -847,7 +908,7 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
         }
       }
 
-      if (s.state === "wander" && dPlayer <= CONSTANTS.SHADE_DETECT_R) {
+      if (s.state === "wander" && !benchmarkMode && dPlayer <= CONSTANTS.SHADE_DETECT_R) {
         s.state = "chase";
         s.targetLanternId = null;
       } else if (s.state === "chase" && dPlayer > CONSTANTS.SHADE_DROP_R) {
@@ -857,7 +918,7 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
       if (s.state === "chase") {
         moveTowardXZ(s.pos, player.pos, map.shadeSpeed * DT);
       } else {
-        const targetLantern = pickWanderLanternTarget(s);
+        const targetLantern = benchmarkMode ? null : pickWanderLanternTarget(s);
         if (targetLantern) {
           s.targetLanternId = targetLantern.id;
           moveTowardXZ(s.pos, targetLantern.pos, map.shadeSpeed * DT);
@@ -882,17 +943,20 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
       if (s.safePushTicks === 0) {
         clampShadeOutsideSafeLanterns(s, lanterns, player.pos);
       }
+      updateEntityTerrainY(s.pos, night, 6.0 * DT);
     }
 
-    // Move high-value medium/large fireflies in 3D creative mode
+    // Move high-value medium/large fireflies in 3D creative mode while staying anchored to valid tier surfaces
     if (creativeVariants) {
       for (const m of motes) {
         if (m.moveSpeed <= 0 || m.kind === "dropped") continue;
         m.moveAngle += prng.range(-0.08, 0.08);
         const nx = m.pos[0] + Math.cos(m.moveAngle) * m.moveSpeed * DT;
         const nz = m.pos[2] + Math.sin(m.moveAngle) * m.moveSpeed * DT;
-        if (isWithinPlayableXZ(night, nx, nz)) {
+        const nextY = findMatchingSurfaceY(night, nx, nz, m.pos[1], 0.65);
+        if (nextY !== null) {
           m.pos[0] = nx;
+          m.pos[1] = nextY;
           m.pos[2] = nz;
         } else {
           m.moveAngle += Math.PI;
@@ -928,27 +992,12 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
         d.pos[0] += d.fleeDir[0] * CONSTANTS.DRIFTER_SPEED * DT;
         d.pos[2] += d.fleeDir[1] * CONSTANTS.DRIFTER_SPEED * DT;
       }
+      updateEntityTerrainY(d.pos, night, 8.0 * DT);
     }
   }
 
   function resolveCollisions(events) {
     if (player.respawnWaitTicks > 0 || player.fallingTriggered) return;
-
-    // Move high-value medium/large fireflies in 3D creative mode
-    if (creativeVariants) {
-      for (const m of motes) {
-        if (m.moveSpeed <= 0 || m.kind === "dropped") continue;
-        m.moveAngle += prng.range(-0.08, 0.08);
-        const nx = m.pos[0] + Math.cos(m.moveAngle) * m.moveSpeed * DT;
-        const nz = m.pos[2] + Math.sin(m.moveAngle) * m.moveSpeed * DT;
-        if (isWithinPlayableXZ(night, nx, nz)) {
-          m.pos[0] = nx;
-          m.pos[2] = nz;
-        } else {
-          m.moveAngle += Math.PI;
-        }
-      }
-    }
 
     for (const d of drifters) {
       if (d.justSpawned || d.state !== "chase" || d.stolen > 0) continue;
@@ -1021,7 +1070,8 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
         const pt = map.moteSpawnPoints[Math.floor(prng.next() * map.moteSpawnPoints.length)];
         const jx = pt[0] + prng.range(-3.0, 3.0);
         const jz = pt[2] + prng.range(-3.0, 3.0);
-        spawnMoteAtPoint(isWithinPlayableXZ(night, jx, jz) ? [jx, pt[1], jz] : pt, "random", null);
+        const surfY = findMatchingSurfaceY(night, jx, jz, pt[1], 0.6);
+        spawnMoteAtPoint(surfY !== null ? [jx, surfY, jz] : pt, "random", null);
       }
     }
 
@@ -1129,16 +1179,20 @@ export function createSimulation({ seed = 1, night = 1, scenario = null, creativ
     }
 
     decrementCountersAndDrainFuel(events);
-    movePlayerAndCheckFall(events, edges);
-    pickupMotesAndCharms(events);
-    interactLanterns(events, edges);
-    updateSafeZones();
-    triggerPulse(events, edges);
-    tryCreativeLightSlash(events, edges);
+    if (!benchmarkMode) {
+      movePlayerAndCheckFall(events, edges);
+      pickupMotesAndCharms(events);
+      interactLanterns(events, edges);
+      updateSafeZones();
+      triggerPulse(events, edges);
+      tryCreativeLightSlash(events, edges);
+    }
     moveShadesAndDrifters();
-    resolveCollisions(events);
-    spawnScheduledEntities(events);
-    evaluateWinLoss(events);
+    if (!benchmarkMode) {
+      resolveCollisions(events);
+      spawnScheduledEntities(events);
+      evaluateWinLoss(events);
+    }
 
     return events;
   }

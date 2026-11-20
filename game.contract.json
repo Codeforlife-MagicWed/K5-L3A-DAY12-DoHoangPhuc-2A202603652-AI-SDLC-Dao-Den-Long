@@ -1,9 +1,11 @@
 {
-  "contract_version": "1.2",
+  "contract_version": "1.3",
   "team": "2A202603652-DoHoangPhuc",
   "build_cmd": "npm install && npm run build",
-  "run_cmd": "npm run dev",
+  "run_cmd": "node src/server/run.js",
   "headless_cmd": "node src/headless/cli.js",
+  "bench_cmd": "node src/bench/bench.js",
+  "soak_cmd": "node src/headless/soak.js",
   "tuning": {
     "player_speed": 6.0,
     "dash_speed": 14.0,

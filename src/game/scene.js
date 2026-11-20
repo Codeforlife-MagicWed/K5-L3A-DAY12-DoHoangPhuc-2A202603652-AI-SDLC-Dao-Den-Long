@@ -1,5 +1,56 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FIREFLY_TYPES, PALETTE, TUNING, distXZ } from "../sim/config.js";
+import { addIslandEcology, bakeGeoPart, createFlowingStreamTexture } from "./ecology.js";
+import { createShadeSystem } from "./shades.js";
+
+function createMoteInstancedPool(scene, maxCount = 256) {
+  const core = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.18, 10, 8),
+    new THREE.MeshBasicMaterial({ color: PALETTE.fireflyCore, fog: false }),
+    maxCount
+  );
+  const halo = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.4, 10, 8),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.fireflyGlow,
+      transparent: true,
+      opacity: 0.52,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }),
+    maxCount
+  );
+  const glow = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.88, 10, 8),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.fireflyGlow,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }),
+    maxCount
+  );
+  const wingGeo = mergeGeometries(
+    [
+      bakeGeoPart(new THREE.PlaneGeometry(0.26, 0.12), -0.18, 0.05, 0),
+      bakeGeoPart(new THREE.PlaneGeometry(0.26, 0.12), 0.18, 0.05, 0)
+    ],
+    false
+  );
+  const wings = new THREE.InstancedMesh(
+    wingGeo,
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    maxCount
+  );
+  for (const m of [core, halo, glow, wings]) {
+    m.count = 0;
+    m.frustumCulled = false;
+    scene.add(m);
+  }
+  return { core, halo, glow, wings };
+}
 
 function createStarfield() {
   const count = 360;
@@ -16,251 +67,8 @@ function createStarfield() {
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   return new THREE.Points(
     geo,
-    new THREE.PointsMaterial({ color: 0xffe9b0, size: 0.9, transparent: true, opacity: 0.75 })
+    new THREE.PointsMaterial({ color: 0xffe9b0, size: 0.9, transparent: true, opacity: 0.78, fog: false })
   );
-}
-
-function createTree(type, x, y, z, scale = 1) {
-  const group = new THREE.Group();
-  group.position.set(x, y, z);
-  group.scale.setScalar(scale);
-
-  const woodMat = new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.9 });
-  const leafDark = new THREE.MeshStandardMaterial({ color: 0x244c41, roughness: 0.85 });
-  const leafMid = new THREE.MeshStandardMaterial({ color: PALETTE.grass, roughness: 0.82 });
-
-  if (type === "areca") {
-    // Tall slender areca / palm tree for Đảo Cau
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 4.6, 8), woodMat);
-    trunk.position.y = 2.3;
-    trunk.castShadow = true;
-    group.add(trunk);
-    for (let i = 0; i < 6; i++) {
-      const frond = new THREE.Mesh(new THREE.ConeGeometry(0.45, 2.1, 5), i % 2 === 0 ? leafDark : leafMid);
-      const a = (i / 6) * Math.PI * 2;
-      frond.position.set(Math.cos(a) * 0.75, 4.55, Math.sin(a) * 0.75);
-      frond.rotation.z = -Math.cos(a) * 1.05;
-      frond.rotation.x = Math.sin(a) * 1.05;
-      frond.castShadow = true;
-      group.add(frond);
-    }
-  } else if (type === "pine") {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 1.5, 7), woodMat);
-    trunk.position.y = 0.75;
-    trunk.castShadow = true;
-    group.add(trunk);
-    const tiers = [
-      { r: 1.4, h: 1.8, y: 2.0 },
-      { r: 1.05, h: 1.6, y: 3.1 },
-      { r: 0.68, h: 1.3, y: 4.0 }
-    ];
-    for (let i = 0; i < tiers.length; i++) {
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(tiers[i].r, tiers[i].h, 7), i % 2 === 0 ? leafDark : leafMid);
-      cone.position.y = tiers[i].y;
-      cone.castShadow = true;
-      group.add(cone);
-    }
-  } else {
-    // Stylized rounded fairy-tale tree
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.3, 1.8, 8), woodMat);
-    trunk.position.y = 0.9;
-    trunk.castShadow = true;
-    const crown1 = new THREE.Mesh(new THREE.DodecahedronGeometry(1.15, 1), leafDark);
-    crown1.position.set(0, 2.4, 0);
-    crown1.castShadow = true;
-    const crown2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.82, 1), leafMid);
-    crown2.position.set(0.45, 2.85, 0.25);
-    crown2.castShadow = true;
-    group.add(trunk, crown1, crown2);
-  }
-  return group;
-}
-
-function createRockCluster(x, y, z, scale = 1) {
-  const group = new THREE.Group();
-  group.position.set(x, y, z);
-  group.scale.setScalar(scale);
-  const rockMat = new THREE.MeshStandardMaterial({ color: PALETTE.lanternUnlit, roughness: 0.95 });
-  const r1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65, 0), rockMat);
-  r1.scale.set(1.2, 0.7, 1.0);
-  r1.position.y = 0.25;
-  r1.castShadow = true;
-  r1.receiveShadow = true;
-  const r2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.4, 0), rockMat);
-  r2.position.set(0.55, 0.16, 0.35);
-  r2.castShadow = true;
-  group.add(r1, r2);
-  return group;
-}
-
-function createWoodenPier(x, y, z, rotY = 0) {
-  const group = new THREE.Group();
-  group.position.set(x, y, z);
-  group.rotation.y = rotY;
-  const woodMat = new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.85 });
-  for (let i = 0; i < 6; i++) {
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.16, 0.85), woodMat);
-    plank.position.set(0, 0.08, i * 1.0);
-    plank.receiveShadow = true;
-    group.add(plank);
-  }
-  for (const sx of [-1.5, 1.5]) {
-    for (const sz of [0.5, 4.8]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.4, 8), woodMat);
-      post.position.set(sx, 0.45, sz);
-      post.castShadow = true;
-      group.add(post);
-    }
-  }
-  // Tiny moored lantern boat
-  const boat = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.4, 2.8, 6), woodMat);
-  boat.rotation.z = Math.PI / 2;
-  boat.scale.set(0.45, 1, 0.95);
-  boat.position.set(2.8, -0.35, 4.4);
-  group.add(boat);
-  return group;
-}
-
-function addDecorAroundIsland(group, night, lanterns) {
-  // Ground grass patches & pebbles
-  const patchMat = new THREE.MeshStandardMaterial({ color: 0x264b41, roughness: 0.95 });
-  const sandMat = new THREE.MeshStandardMaterial({ color: PALETTE.sand, roughness: 0.9 });
-
-  const isNearImportant = (x, z, minClear = 4.5) => {
-    if (Math.hypot(x, z) < 5.0) return true;
-    if (night === 2 && Math.hypot(x - 70, z) < 5.0) return true;
-    if (night === 2 && x > 22 && x < 48 && Math.abs(z) < 5) return true;
-    return lanterns.some((l) => Math.hypot(x - l.pos[0], z - l.pos[2]) < minClear);
-  };
-
-  if (night === 1) {
-    // Winding river across Đảo Bến + wooden footbridges + lily pads
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: PALETTE.cloudSea,
-      emissive: 0x0b2c3d,
-      emissiveIntensity: 0.45,
-      roughness: 0.22,
-      metalness: 0.3
-    });
-    const streamPts = [];
-    for (let i = -14; i <= 14; i++) {
-      const z = (i / 14) * 37.5;
-      const x = Math.sin(z * 0.11) * 9.5 + 11.0;
-      streamPts.push([x, z]);
-      const seg = new THREE.Mesh(new THREE.CircleGeometry(2.15, 14), waterMat);
-      seg.rotation.x = -Math.PI / 2;
-      seg.position.set(x, 0.025, z);
-      seg.receiveShadow = true;
-      group.add(seg);
-      if (i % 3 === 0) {
-        group.add(createRockCluster(x + 2.2, 0, z, 0.55));
-        group.add(createRockCluster(x - 2.2, 0, z, 0.48));
-      }
-    }
-    // Two cozy wooden footbridges over the stream
-    for (const bz of [-11, 12]) {
-      const bx = Math.sin(bz * 0.11) * 9.5 + 11.0;
-      const bridge = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.22, 2.4), new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.85 }));
-      bridge.position.set(bx, 0.16, bz);
-      bridge.castShadow = true;
-      bridge.receiveShadow = true;
-      group.add(bridge);
-    }
-
-    // Trees & rocks around perimeter + mid-ring groves (clear of spawn & lanterns) + pier
-    group.add(createWoodenPier(0, 0, 39.2, 0));
-    for (let i = 0; i < 20; i++) {
-      const a = (i / 20) * Math.PI * 2 + 0.15;
-      const r = i % 2 === 0 ? 33.5 + (i % 3) * 1.1 : 17.5 + (i % 3) * 1.4;
-      const x = r * Math.cos(a);
-      const z = r * Math.sin(a);
-      if (isNearImportant(x, z, 4.8)) continue;
-      group.add(createTree(i % 2 === 0 ? "round" : "pine", x, 0, z, 0.95 + (i % 3) * 0.16));
-      if (i % 2 === 0) group.add(createRockCluster(x * 0.9, 0, z * 0.9, 0.85));
-    }
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      const patch = new THREE.Mesh(new THREE.CircleGeometry(2.6 + (i % 3), 12), patchMat);
-      patch.rotation.x = -Math.PI / 2;
-      patch.position.set(Math.cos(a) * (14 + (i % 2) * 10), 0.02, Math.sin(a) * (14 + (i % 2) * 10));
-      patch.receiveShadow = true;
-      group.add(patch);
-    }
-  } else if (night === 2) {
-    // Small curved brook & lagoon on Island A & B
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: PALETTE.cloudSea,
-      emissive: 0x0b2c3d,
-      emissiveIntensity: 0.45,
-      roughness: 0.22,
-      metalness: 0.3
-    });
-    for (const cx of [0, 70]) {
-      for (let i = -7; i <= 7; i++) {
-        const z = (i / 7) * 24;
-        const x = cx + Math.cos(z * 0.14) * 5.5 - 9.0;
-        const seg = new THREE.Mesh(new THREE.CircleGeometry(1.75, 12), waterMat);
-        seg.rotation.x = -Math.PI / 2;
-        seg.position.set(x, 0.025, z);
-        group.add(seg);
-      }
-    }
-    // Bamboo bridge side posts & ropes (purely decorative)
-    const woodMat = new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.85 });
-    for (const bx of [27, 31, 35, 39, 43]) {
-      for (const bz of [-1.9, 1.9]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1, 6), woodMat);
-        post.position.set(bx, 0.45, bz);
-        post.castShadow = true;
-        group.add(post);
-      }
-    }
-    for (const bz of [-1.9, 1.9]) {
-      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 18, 6), sandMat);
-      rope.rotation.z = Math.PI / 2;
-      rope.position.set(35, 0.88, bz);
-      group.add(rope);
-    }
-    // Areca trees on Island A (0,0) & Island B (70,0)
-    for (const cx of [0, 70]) {
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2 + 0.22;
-        const r = 24.5;
-        const x = cx + r * Math.cos(a);
-        const z = r * Math.sin(a);
-        if (isNearImportant(x, z, 4.2)) continue;
-        group.add(createTree("areca", x, 0, z, 0.95 + (i % 2) * 0.2));
-        if (i % 2 === 1) group.add(createRockCluster(cx + (r - 2) * Math.cos(a), 0, (r - 2) * Math.sin(a), 0.75));
-      }
-    }
-  } else {
-    // Night 3: Circular moat stream at Tier 0 + stone stepping pads + pine trees
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: PALETTE.cloudSea,
-      emissive: 0x0b2c3d,
-      emissiveIntensity: 0.45,
-      roughness: 0.22,
-      metalness: 0.3
-    });
-    for (let i = 0; i < 28; i++) {
-      const a = (i / 28) * Math.PI * 1.4 - 0.6;
-      const r = 29.5 + Math.sin(i * 0.8) * 1.4;
-      const seg = new THREE.Mesh(new THREE.CircleGeometry(1.85, 12), waterMat);
-      seg.rotation.x = -Math.PI / 2;
-      seg.position.set(Math.cos(a) * r, 0.025, Math.sin(a) * r);
-      group.add(seg);
-    }
-    // Night 3: Pine trees around outer ring + rocks around tier 0
-    for (let i = 0; i < 18; i++) {
-      const a = (i / 18) * Math.PI * 2 + 0.12;
-      const r = 39.5;
-      const x = r * Math.cos(a);
-      const z = r * Math.sin(a);
-      if (isNearImportant(x, z, 4.5)) continue;
-      group.add(createTree(i % 3 === 0 ? "round" : "pine", x, 0, z, 1.0 + (i % 3) * 0.2));
-      if (i % 3 === 1) group.add(createRockCluster(r * 0.88 * Math.cos(a), 0, r * 0.88 * Math.sin(a), 0.95));
-    }
-  }
 }
 
 function createMayMesh() {
@@ -269,23 +77,21 @@ function createMayMesh() {
   const cloudMat = new THREE.MeshStandardMaterial({
     color: 0xf7f4ec,
     emissive: 0xfff3dc,
-    emissiveIntensity: 0.18,
+    emissiveIntensity: 0.2,
     roughness: 0.65
   });
   const scarfMat = new THREE.MeshStandardMaterial({ color: PALETTE.mayScarf, roughness: 0.6 });
   const goldMat = new THREE.MeshStandardMaterial({ color: PALETTE.goldAccent, roughness: 0.4, metalness: 0.25 });
   const woodMat = new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.82 });
 
-  // Tidy floating cloud cushion under Mây's feet
   const cloudBase = new THREE.Group();
   cloudBase.position.y = 0.14;
-  const puffSpecs = [
+  for (const [cx, cy, cz, cr, sy] of [
     [0, 0, 0, 0.34, 0.55],
     [-0.26, -0.02, 0.04, 0.24, 0.52],
     [0.26, -0.02, 0.04, 0.24, 0.52],
     [0, -0.02, -0.22, 0.24, 0.52]
-  ];
-  for (const [cx, cy, cz, cr, sy] of puffSpecs) {
+  ]) {
     const p = new THREE.Mesh(new THREE.SphereGeometry(cr, 14, 10), cloudMat);
     p.scale.set(1, sy, 1);
     p.position.set(cx, cy, cz);
@@ -293,7 +99,6 @@ function createMayMesh() {
   }
   group.add(cloudBase);
 
-  // Cute wooden shoes peeking under cloak
   const footL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), woodMat);
   footL.scale.set(1, 0.7, 1.3);
   footL.position.set(-0.12, 0.22, 0.06);
@@ -301,7 +106,6 @@ function createMayMesh() {
   footR.position.x = 0.12;
   group.add(footL, footR);
 
-  // Smooth chibi cloak + gold hem trim + red sash
   const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.82, 24), coatMat);
   cloak.position.y = 0.64;
   cloak.castShadow = true;
@@ -318,7 +122,6 @@ function createMayMesh() {
   pouch.position.set(-0.27, 0.62, 0.1);
   group.add(cloak, hem, belt, pouch);
 
-  // Light-staff arm (pivots during light-slash)
   const staffPivot = new THREE.Group();
   staffPivot.position.set(0.36, 0.76, 0.08);
   const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, 1.28, 8), woodMat);
@@ -332,7 +135,6 @@ function createMayMesh() {
   staffPivot.add(staff, staffTip);
   group.add(staffPivot);
 
-  // Cozy red scarf + 2 neat ribbons
   const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.065, 10, 20), scarfMat);
   scarf.rotation.x = Math.PI / 2;
   scarf.position.y = 1.01;
@@ -344,7 +146,6 @@ function createMayMesh() {
   scarfTail2.rotation.set(0.28, 0, 0.16);
   group.add(scarf, scarfTail1, scarfTail2);
 
-  // Smooth cute chibi head + warm skin + gentle eyes & rosy cheeks
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 18, 16),
     new THREE.MeshStandardMaterial({ color: 0xffe0c4, roughness: 0.6 })
@@ -371,7 +172,6 @@ function createMayMesh() {
   cheekR.position.x = 0.125;
   cheekR.rotation.y = 0.35;
 
-  // Neat conical Nón Lá with golden rim + tiny hanging lantern
   const hat = new THREE.Mesh(
     new THREE.ConeGeometry(0.58, 0.3, 28),
     new THREE.MeshStandardMaterial({ color: PALETTE.sand, roughness: 0.82, side: THREE.DoubleSide })
@@ -388,26 +188,68 @@ function createMayMesh() {
   miniLantern.position.set(0.42, 1.19, 0.26);
   group.add(head, hair, eyeL, eyeR, cheekL, cheekR, hat, hatRim, miniLantern);
 
-  const light = new THREE.PointLight(PALETTE.lanternLit, 4.4, 14, 1.5);
-  light.position.set(0, 1.5, 0.25);
+  // Handheld paper lantern on Mây's left side + warm local light
+  const handArmPivot = new THREE.Group();
+  handArmPivot.position.set(-0.36, 0.78, 0.1);
+  const handStick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.42, 6), woodMat);
+  handStick.position.set(-0.08, -0.05, 0.18);
+  handStick.rotation.x = Math.PI / 2 - 0.35;
+  const handLanternBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.09, 0.22, 8),
+    new THREE.MeshStandardMaterial({
+      color: PALETTE.lanternCore,
+      emissive: PALETTE.lanternLit,
+      emissiveIntensity: 2.1,
+      roughness: 0.35
+    })
+  );
+  handLanternBody.position.set(-0.14, -0.18, 0.34);
+  const handCapTop = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.07, 8), woodMat);
+  handCapTop.position.set(-0.14, -0.05, 0.34);
+  const handCapBot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.04, 8), woodMat);
+  handCapBot.position.set(-0.14, -0.3, 0.34);
+  const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.1, 6), scarfMat);
+  tassel.rotation.x = Math.PI;
+  tassel.position.set(-0.14, -0.36, 0.34);
+  const handGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 12, 10),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.lanternLit,
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  handGlow.position.set(-0.14, -0.18, 0.34);
+  handArmPivot.add(handStick, handLanternBody, handCapTop, handCapBot, tassel, handGlow);
+  group.add(handArmPivot);
+
+  const light = new THREE.PointLight(0xffb85c, 8.2, 19, 1.6);
+  light.position.set(-0.2, 1.45, 0.35);
   group.add(light);
 
   const selfAura = new THREE.Mesh(
-    new THREE.CircleGeometry(2.6, 24),
-    new THREE.MeshBasicMaterial({ color: PALETTE.lanternLit, transparent: true, opacity: 0.14, depthWrite: false })
+    new THREE.SphereGeometry(2.1, 16, 10),
+    new THREE.MeshBasicMaterial({
+      color: PALETTE.lanternLit,
+      transparent: true,
+      opacity: 0.09,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.BackSide
+    })
   );
-  selfAura.rotation.x = -Math.PI / 2;
-  selfAura.position.y = 0.03;
+  selfAura.position.y = 0.95;
   group.add(selfAura);
 
-  return { group, footL, footR, scarfTail1, scarfTail2, staffPivot };
+  return { group, footL, footR, scarfTail1, scarfTail2, staffPivot, handArmPivot };
 }
 
 function createLanternMesh(lantern) {
   const group = new THREE.Group();
   group.position.set(lantern.pos[0], lantern.pos[1], lantern.pos[2]);
 
-  // Stone shrine floor circle
   const shrinePad = new THREE.Mesh(
     new THREE.CylinderGeometry(1.55, 1.75, 0.14, 16),
     new THREE.MeshStandardMaterial({ color: 0x454958, roughness: 0.92 })
@@ -442,7 +284,6 @@ function createLanternMesh(lantern) {
   core.position.y = 3.5;
   group.add(core);
 
-  // Paper tear marks visible when lantern is unlit (non-color distinction)
   const tearMat = new THREE.MeshBasicMaterial({ color: 0x1e192b });
   const tear1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.58, 0.05), tearMat);
   tear1.position.set(0.22, 3.5, 0.45);
@@ -452,7 +293,6 @@ function createLanternMesh(lantern) {
   tear2.rotation.z = -0.38;
   group.add(tear1, tear2);
 
-  // Fuel gauge bar above roof
   const fuelBarGroup = new THREE.Group();
   fuelBarGroup.position.set(0, 4.95, 0);
   const fuelBg = new THREE.Mesh(
@@ -474,7 +314,6 @@ function createLanternMesh(lantern) {
   roof.castShadow = true;
   group.add(roof);
 
-  // Dark zone ring when unlit vs Warm Safe Zone disc + border ring when lit
   const darkZoneMat = new THREE.MeshBasicMaterial({
     color: PALETTE.shadeRim,
     transparent: true,
@@ -506,73 +345,93 @@ function createLanternMesh(lantern) {
     depthWrite: false,
     side: THREE.DoubleSide
   });
-  const safeRing = new THREE.Mesh(new THREE.RingGeometry(TUNING.safe_radius - 0.2, TUNING.safe_radius, 48), safeRingMat);
+  const safeRing = new THREE.Mesh(new THREE.RingGeometry(TUNING.safe_radius - 0.16, TUNING.safe_radius, 48), safeRingMat);
   safeRing.rotation.x = -Math.PI / 2;
   safeRing.position.y = 0.05;
   group.add(safeRing);
 
-  const light = new THREE.PointLight(PALETTE.lanternLit, 0, 26, 1.3);
+  const safeDomeMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.lanternLit,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const safeDome = new THREE.Mesh(
+    new THREE.SphereGeometry(TUNING.safe_radius, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    safeDomeMat
+  );
+  safeDome.position.y = 0.02;
+  group.add(safeDome);
+
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.lanternCore,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const lightBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 2.2, 5.2, 14, 1, true), beamMat);
+  lightBeam.position.y = 2.6;
+  group.add(lightBeam);
+
+  const headGlowMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.lanternLit,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const headGlow = new THREE.Mesh(new THREE.SphereGeometry(1.5, 14, 10), headGlowMat);
+  headGlow.position.y = 3.5;
+  group.add(headGlow);
+
+  const light = new THREE.PointLight(PALETTE.lanternLit, 0, 28, 1.5);
   light.position.y = 3.6;
   group.add(light);
 
-  return { group, core, coreMat, tear1, tear2, fuelBarGroup, fuelFill, fuelFillMat, light, darkZoneMat, safeDiscMat, safeRingMat };
-}
-
-function createShadeMesh() {
-  const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: PALETTE.shadeBody,
-    emissive: PALETTE.shadeRim,
-    emissiveIntensity: 0.7,
-    roughness: 0.5
-  });
-  const body = new THREE.Mesh(new THREE.DodecahedronGeometry(0.64, 1), bodyMat);
-  body.scale.set(1, 1.35, 1);
-  body.castShadow = true;
-  group.add(body);
-
-  // Dark wispy tendrils around shade base
-  for (let i = 0; i < 3; i++) {
-    const wisp = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.85, 6), bodyMat);
-    const a = (i / 3) * Math.PI * 2;
-    wisp.position.set(Math.cos(a) * 0.42, -0.45, Math.sin(a) * 0.42);
-    wisp.rotation.x = Math.PI;
-    group.add(wisp);
-  }
-
-  const eyeMat = new THREE.MeshBasicMaterial({ color: PALETTE.shadeRim });
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), eyeMat);
-  eyeL.position.set(-0.2, 0.25, 0.52);
-  const eyeR = eyeL.clone();
-  eyeR.position.x = 0.2;
-  group.add(eyeL, eyeR);
-
-  const stunRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.55, 0.05, 8, 24),
-    new THREE.MeshBasicMaterial({ color: PALETTE.goldAccent })
-  );
-  stunRing.rotation.x = Math.PI / 2;
-  stunRing.position.y = 1.05;
-  stunRing.visible = false;
-  group.add(stunRing);
-
-  return { group, bodyMat, eyeMat, stunRing };
+  return {
+    group,
+    core,
+    coreMat,
+    tear1,
+    tear2,
+    fuelBarGroup,
+    fuelFill,
+    fuelFillMat,
+    light,
+    darkZoneMat,
+    safeDiscMat,
+    safeRingMat,
+    safeDomeMat,
+    beamMat,
+    headGlowMat
+  };
 }
 
 function createDrifterMesh() {
   const group = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.26, 1),
+    new THREE.MeshStandardMaterial({ color: PALETTE.drifter, emissive: PALETTE.drifter, emissiveIntensity: 0.7 })
+  );
+  core.position.y = 1.25;
+  group.add(core);
+
   const mat = new THREE.MeshStandardMaterial({
     color: PALETTE.drifter,
     emissive: PALETTE.drifter,
     emissiveIntensity: 0.4,
     transparent: true,
-    opacity: 0.86,
+    opacity: 0.85,
     side: THREE.DoubleSide
   });
   const parts = [];
-  for (let i = 0; i < 3; i++) {
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.45 - i * 0.08, 0.24, 0.55), mat);
-    seg.position.set(0, 1.2, -i * 0.52);
+  for (let i = 0; i < 5; i++) {
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.42 - i * 0.06, 0.16, 0.42), mat);
+    seg.position.set(0, 1.25, -0.35 - i * 0.38);
     group.add(seg);
     parts.push(seg);
   }
@@ -583,18 +442,13 @@ function createCharmMesh() {
   const group = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(0.42, 0.72, 0.08),
-    new THREE.MeshStandardMaterial({ color: PALETTE.mayScarf, emissive: PALETTE.mayScarf, emissiveIntensity: 0.5 })
+    new THREE.MeshStandardMaterial({ color: PALETTE.mayScarf, emissive: PALETTE.mayScarf, emissiveIntensity: 0.55 })
   );
   const border = new THREE.Mesh(
     new THREE.BoxGeometry(0.52, 0.82, 0.05),
-    new THREE.MeshStandardMaterial({ color: PALETTE.goldAccent, emissive: PALETTE.goldAccent, emissiveIntensity: 0.35 })
+    new THREE.MeshStandardMaterial({ color: PALETTE.goldAccent, emissive: PALETTE.goldAccent, emissiveIntensity: 0.4 })
   );
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.58, 0.04, 6, 20),
-    new THREE.MeshBasicMaterial({ color: PALETTE.goldAccent })
-  );
-  ring.rotation.x = Math.PI / 2;
-  group.add(border, body, ring);
+  group.add(border, body);
   return group;
 }
 
@@ -616,19 +470,19 @@ function createLaunchpadMesh(pos) {
   return group;
 }
 
-function buildNightTerrain(night, map) {
+function buildNightTerrain(night, map, streamMat) {
   const group = new THREE.Group();
   const grassMat = new THREE.MeshStandardMaterial({ color: PALETTE.grass, roughness: 0.92 });
   const sandMat = new THREE.MeshStandardMaterial({ color: PALETTE.sand, roughness: 0.9 });
+  const cliffMat = new THREE.MeshStandardMaterial({ color: 0x5f5866, roughness: 0.94 });
   const woodMat = new THREE.MeshStandardMaterial({ color: PALETTE.wood, roughness: 0.85 });
-  const cloudMat = new THREE.MeshStandardMaterial({ color: PALETTE.cloudSea, roughness: 1.0 });
+  const cloudMat = new THREE.MeshStandardMaterial({ color: PALETTE.cloudSea, roughness: 0.95 });
 
   const cloudSea = new THREE.Mesh(new THREE.PlaneGeometry(360, 360), cloudMat);
   cloudSea.rotation.x = -Math.PI / 2;
   cloudSea.position.set(night === 2 ? 35 : 0, -11.5, 0);
   group.add(cloudSea);
 
-  // Fluffy cloud puffs around horizon
   const puffMat = new THREE.MeshStandardMaterial({ color: PALETTE.fogNight, roughness: 1.0 });
   const centerX = night === 2 ? 35 : 0;
   for (let i = 0; i < 20; i++) {
@@ -673,21 +527,30 @@ function buildNightTerrain(night, map) {
     const shape = new THREE.Shape();
     shape.absarc(0, 0, 24, 0, Math.PI, false);
     shape.absarc(0, 0, 12, Math.PI, 0, true);
-    const tier1Geo = new THREE.ExtrudeGeometry(shape, { depth: 3.0, bevelEnabled: false, curveSegments: 36 });
+    const tier1Geo = new THREE.ExtrudeGeometry(shape, { depth: 2.85, bevelEnabled: false, curveSegments: 36 });
     tier1Geo.rotateX(Math.PI / 2);
-    const tier1 = new THREE.Mesh(tier1Geo, sandMat);
-    tier1.position.y = 3.0;
+    const tier1 = new THREE.Mesh(tier1Geo, cliffMat);
+    tier1.position.y = 2.85;
     tier1.receiveShadow = true;
     tier1.castShadow = true;
-    group.add(tier1);
 
-    const tier2 = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 0.65, 36), grassMat);
-    tier2.position.y = 5.68;
-    tier2.receiveShadow = true;
-    tier2.castShadow = true;
-    group.add(tier2);
+    const tier1TopGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.16, bevelEnabled: false, curveSegments: 36 });
+    tier1TopGeo.rotateX(Math.PI / 2);
+    const tier1Top = new THREE.Mesh(tier1TopGeo, sandMat);
+    tier1Top.position.y = 3.01;
+    tier1Top.receiveShadow = true;
+    group.add(tier1, tier1Top);
 
-    // Detailed Bell Tower on Tier 2
+    const tier2Base = new THREE.Mesh(new THREE.CylinderGeometry(8.0, 8.2, 5.75, 36), cliffMat);
+    tier2Base.position.y = 2.875;
+    tier2Base.receiveShadow = true;
+    tier2Base.castShadow = true;
+    const tier2Top = new THREE.Mesh(new THREE.CylinderGeometry(8.05, 8.05, 0.25, 36), grassMat);
+    tier2Top.position.y = 5.875;
+    tier2Top.receiveShadow = true;
+    tier2Top.castShadow = true;
+    group.add(tier2Base, tier2Top);
+
     const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.1, 8.0, 20), woodMat);
     tower.position.y = 10.0;
     tower.castShadow = true;
@@ -704,25 +567,36 @@ function buildNightTerrain(night, map) {
     bellRoof.castShadow = true;
     group.add(tower, bell, bellRoof);
 
+    const slopeAngle = Math.atan2(3, 6);
+    const rampLen = Math.hypot(6, 3);
     for (const deg of [30, 150]) {
       const rad = (deg * Math.PI) / 180;
-      const rampLen = Math.hypot(6, 3);
+      const rampGroup = new THREE.Group();
+      rampGroup.position.set(27.0 * Math.cos(rad), 1.5 - 0.15 / Math.cos(slopeAngle), 27.0 * Math.sin(rad));
+      rampGroup.rotation.order = "YXZ";
+      rampGroup.rotation.y = -rad;
+      rampGroup.rotation.z = -slopeAngle;
+
       const ramp = new THREE.Mesh(new THREE.BoxGeometry(rampLen, 0.3, 3.0), woodMat);
-      ramp.position.set(27.0 * Math.cos(rad), 1.35, 27.0 * Math.sin(rad));
-      ramp.rotation.y = -rad;
-      ramp.rotation.z = Math.atan2(3, 6);
       ramp.receiveShadow = true;
       ramp.castShadow = true;
-      group.add(ramp);
+      rampGroup.add(ramp);
+
+      for (const side of [-1.45, 1.45]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(rampLen, 0.18, 0.14), sandMat);
+        rail.position.set(0, 0.22, side);
+        rampGroup.add(rail);
+      }
+      group.add(rampGroup);
     }
   }
 
   for (const pad of map.launchpads) {
     group.add(createLaunchpadMesh(pad.pos));
   }
-  addDecorAroundIsland(group, night, map.lanterns);
+  const ecology = addIslandEcology(group, night, map.lanterns, streamMat);
 
-  return group;
+  return { group, ecology };
 }
 
 export function createWorldRenderer(canvas) {
@@ -732,19 +606,30 @@ export function createWorldRenderer(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.BasicShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.24;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(PALETTE.skyNight);
-  scene.fog = new THREE.FogExp2(PALETTE.fogNight, 0.042);
+  const nightSkyColor = new THREE.Color(PALETTE.skyNight);
+  const preDawnSkyColor = new THREE.Color(0x6e365c);
+  const dawnSkyColor = new THREE.Color(0xf2a15e);
+  const nightHemiSky = new THREE.Color(0x6b88d4);
+  const dawnHemiSky = new THREE.Color(0xffcfa0);
+  const nightMoonColor = new THREE.Color(0x8eaaf5);
+  const dawnSunColor = new THREE.Color(0xffbe73);
+
+  scene.background = nightSkyColor.clone();
+  scene.fog = new THREE.Fog(PALETTE.skyNight, 10, 40);
   scene.add(createStarfield());
 
   const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 260);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.15);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.09);
   scene.add(ambient);
 
-  const moonLight = new THREE.DirectionalLight(0x8aa2e8, 0.1);
+  const hemiLight = new THREE.HemisphereLight(nightHemiSky, new THREE.Color(0x162e27), 0.24);
+  scene.add(hemiLight);
+
+  const moonLight = new THREE.DirectionalLight(nightMoonColor, 0.32);
   moonLight.position.set(-24, 42, -20);
   moonLight.castShadow = true;
   moonLight.shadow.mapSize.set(512, 512);
@@ -758,27 +643,81 @@ export function createWorldRenderer(canvas) {
   scene.add(moonLight);
   scene.add(moonLight.target);
 
+  // Dawn Cinematic 3D Rising Sun + Solar Halo (hidden at night)
+  const sunGroup = new THREE.Group();
+  const sunDisc = new THREE.Mesh(
+    new THREE.SphereGeometry(7.5, 24, 18),
+    new THREE.MeshBasicMaterial({ color: 0xfff1c4, fog: false })
+  );
+  const sunHalo1 = new THREE.Mesh(
+    new THREE.SphereGeometry(12.5, 20, 14),
+    new THREE.MeshBasicMaterial({
+      color: 0xffb347,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    })
+  );
+  const sunHalo2 = new THREE.Mesh(
+    new THREE.SphereGeometry(20.0, 20, 14),
+    new THREE.MeshBasicMaterial({
+      color: 0xff7b54,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    })
+  );
+  sunGroup.add(sunDisc, sunHalo1, sunHalo2);
+  sunGroup.visible = false;
+  scene.add(sunGroup);
+
   const playerRig = createMayMesh();
   scene.add(playerRig.group);
 
-  // Pooled warm point lights for the nearest 2 fireflies (ground discs provide glow on all fireflies)
   const moteLights = Array.from({ length: 2 }, () => {
-    const l = new THREE.PointLight(PALETTE.fireflyGlow, 1.8, 7.5, 1.8);
+    const l = new THREE.PointLight(PALETTE.fireflyGlow, 2.8, 9.0, 1.7);
     l.visible = false;
     scene.add(l);
     return l;
   });
 
-  const pulseWave = new THREE.Mesh(
-    new THREE.RingGeometry(0.4, 0.85, 36),
-    new THREE.MeshBasicMaterial({ color: PALETTE.goldAccent, transparent: true, opacity: 0.75, side: THREE.DoubleSide })
-  );
-  pulseWave.rotation.x = -Math.PI / 2;
+  const streamTex = createFlowingStreamTexture();
+  const streamMat = new THREE.MeshStandardMaterial({
+    map: streamTex,
+    emissive: 0x0b2c3d,
+    emissiveIntensity: 0.42,
+    roughness: 0.2,
+    metalness: 0.25
+  });
+
+  const pulseWave = new THREE.Group();
+  const pulseSphereMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.goldAccent,
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const pulseSphere = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), pulseSphereMat);
+  const pulseRingMat = new THREE.MeshBasicMaterial({
+    color: PALETTE.lanternCore,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const pulseRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.045, 6, 32), pulseRingMat);
+  pulseRing.rotation.x = Math.PI / 2;
+  pulseWave.add(pulseSphere, pulseRing);
   pulseWave.visible = false;
   scene.add(pulseWave);
   let pulseAnimTimer = 0;
 
-  // Golden crescent light-slash arc in front of Mây
   const slashArc = new THREE.Mesh(
     new THREE.TorusGeometry(2.3, 0.14, 6, 20, Math.PI * 0.9),
     new THREE.MeshBasicMaterial({ color: PALETTE.lanternCore, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
@@ -789,10 +728,14 @@ export function createWorldRenderer(canvas) {
   let slashAnimTimer = 0;
 
   let terrainGroup = null;
+  let terrainEcology = null;
   let currentNight = 0;
   const lanternMap = new Map();
-  const moteMap = new Map();
-  const shadeMap = new Map();
+  const motePool = createMoteInstancedPool(scene, 256);
+  const shadePool = createShadeSystem(scene, 256);
+  const instDummy = new THREE.Object3D();
+  const projVec = new THREE.Vector3();
+  const camTarget = new THREE.Vector3();
   const drifterMap = new Map();
   const charmMap = new Map();
 
@@ -809,11 +752,16 @@ export function createWorldRenderer(canvas) {
     moonLight.position.set(cx - 24, 46, -20);
     moonLight.target.position.set(cx, 0, 0);
     if (terrainGroup) scene.remove(terrainGroup);
-    terrainGroup = buildNightTerrain(night, map);
+    const built = buildNightTerrain(night, map, streamMat);
+    terrainGroup = built.group;
+    terrainEcology = built.ecology;
     scene.add(terrainGroup);
     clearMapObjects(lanternMap);
-    clearMapObjects(moteMap);
-    clearMapObjects(shadeMap);
+    motePool.core.count = 0;
+    motePool.halo.count = 0;
+    motePool.glow.count = 0;
+    motePool.wings.count = 0;
+    shadePool.reset();
     clearMapObjects(drifterMap);
     clearMapObjects(charmMap);
   }
@@ -828,9 +776,14 @@ export function createWorldRenderer(canvas) {
     slashArc.visible = true;
   }
 
-  function syncEntities(renderState, timeSec, camYawDeg, camPitchDeg = 34, colorblind = false) {
+  function syncEntities(renderState, timeSec, camYawDeg, camPitchDeg = 34, colorblind = false, camCtrl = null) {
     if (renderState.night !== currentNight) {
       resetForNight(renderState.night, renderState.map);
+    }
+    streamTex.offset.y = -(timeSec * 0.65) % 1;
+    if (terrainEcology) {
+      terrainEcology.uniforms.uTime.value = timeSec;
+      terrainEcology.uniforms.uWindAmp.value = camCtrl?.reducedMotion ? 0 : 0.095;
     }
 
     const [px, py, pz] = renderState.player.pos;
@@ -843,8 +796,9 @@ export function createWorldRenderer(canvas) {
     }
     const speedXZ = Math.hypot(renderState.player.vel[0], renderState.player.vel[2]);
     const walkPhase = speedXZ > 0.4 ? Math.sin(timeSec * 14) : 0;
-    playerRig.footL.position.z = 0.05 + walkPhase * 0.16;
-    playerRig.footR.position.z = 0.05 - walkPhase * 0.16;
+    playerRig.footL.position.z = 0.06 + walkPhase * 0.14;
+    playerRig.footR.position.z = 0.06 - walkPhase * 0.14;
+    playerRig.handArmPivot.rotation.z = Math.sin(timeSec * 4) * 0.06 + walkPhase * 0.12;
     playerRig.scarfTail1.rotation.x = 0.35 + (speedXZ > 0.4 ? 0.35 + Math.sin(timeSec * 10) * 0.12 : 0);
     playerRig.scarfTail2.rotation.x = 0.3 + (speedXZ > 0.4 ? 0.3 - Math.sin(timeSec * 10) * 0.12 : 0);
 
@@ -866,15 +820,16 @@ export function createWorldRenderer(canvas) {
     if (pulseAnimTimer > 0) {
       pulseAnimTimer = Math.max(0, pulseAnimTimer - 1 / 60);
       const p = 1 - pulseAnimTimer / 0.4;
-      const scale = 1 + p * TUNING.pulse_radius;
-      pulseWave.position.set(px, py + 0.15, pz);
-      pulseWave.scale.set(scale, scale, 1);
-      pulseWave.material.opacity = (1 - p) * 0.85;
+      const scale = 0.6 + p * TUNING.pulse_radius;
+      pulseWave.position.set(px, py + 0.85, pz);
+      pulseWave.scale.setScalar(scale);
+      pulseSphereMat.opacity = (1 - p) * 0.42;
+      pulseRingMat.opacity = (1 - p) * 0.9;
       if (pulseAnimTimer <= 0) pulseWave.visible = false;
     }
 
     let litCount = 0;
-    const blinkOn = Math.sin(timeSec * Math.PI * 2) > 0; // 1 Hz slow blink for low fuel
+    const blinkOn = Math.sin(timeSec * Math.PI * 2) > 0;
     for (const l of renderState.lanterns) {
       if (!lanternMap.has(l.id)) {
         const obj = createLanternMesh(l);
@@ -886,27 +841,32 @@ export function createWorldRenderer(canvas) {
         litCount++;
         const isLow = l.fuel < TUNING.low_fuel_threshold;
         const flashDim = isLow && !blinkOn;
+        const fuelNorm = Math.max(0.05, Math.min(1, l.fuel / TUNING.fuel_max));
+        const fuelFactor = 0.35 + 0.65 * fuelNorm;
+
         obj.core.scale.set(1, 1, 1);
         obj.tear1.visible = false;
         obj.tear2.visible = false;
         obj.fuelBarGroup.visible = !flashDim;
         obj.fuelBarGroup.lookAt(camera.position);
-        const fRatio = Math.max(0.02, Math.min(1, l.fuel / TUNING.fuel_max));
-        obj.fuelFill.scale.x = fRatio;
-        obj.fuelFill.position.x = -(1 - fRatio) * 0.75;
+        obj.fuelFill.scale.x = fuelNorm;
+        obj.fuelFill.position.x = -(1 - fuelNorm) * 0.75;
         obj.fuelFillMat.color.setHex(isLow ? (colorblind ? 0xffffff : PALETTE.uiDanger) : PALETTE.lanternLit);
 
         obj.coreMat.color.setHex(PALETTE.lanternCore);
         obj.coreMat.emissive.setHex(PALETTE.lanternLit);
-        obj.coreMat.emissiveIntensity = flashDim ? 0.35 : 1.85;
-        obj.light.intensity = flashDim ? 1.5 : 6.2;
+        obj.coreMat.emissiveIntensity = flashDim ? 0.35 : 1.4 + 0.65 * fuelNorm;
+        obj.light.intensity = (flashDim ? 2.2 : 9.5) * fuelFactor;
+        obj.light.distance = 22 + 12 * fuelNorm;
         obj.darkZoneMat.opacity = isLow ? 0.16 : 0;
-        obj.safeDiscMat.opacity = isLow ? 0 : 0.14;
-        obj.safeRingMat.opacity = isLow ? 0 : 0.5;
+        obj.safeDiscMat.opacity = isLow ? 0 : 0.05;
+        obj.safeRingMat.opacity = isLow ? 0 : 0.38;
+        obj.safeDomeMat.opacity = isLow ? 0 : 0.085 * fuelFactor;
+        obj.beamMat.opacity = flashDim ? 0.04 : 0.15 * fuelFactor;
+        obj.headGlowMat.opacity = flashDim ? 0.1 : 0.38 * fuelFactor;
       } else {
         const cost = l.ever_lit ? TUNING.relight_cost : TUNING.lantern_cost;
         const ratio = l.deposited / cost;
-        // Deflate unlit lantern by 20% vertically + show paper tear marks (non-color distinction)
         obj.core.scale.set(1.05, 0.8, 1.05);
         obj.tear1.visible = true;
         obj.tear2.visible = true;
@@ -914,117 +874,142 @@ export function createWorldRenderer(canvas) {
         obj.coreMat.color.setHex(PALETTE.lanternUnlit);
         obj.coreMat.emissive.setHex(PALETTE.lanternLit);
         obj.coreMat.emissiveIntensity = ratio * 0.85;
-        obj.light.intensity = ratio * 1.8;
+        obj.light.intensity = ratio * 2.0;
         obj.darkZoneMat.opacity = 0.18;
         obj.safeDiscMat.opacity = 0;
         obj.safeRingMat.opacity = 0;
+        obj.safeDomeMat.opacity = 0;
+        obj.beamMat.opacity = ratio * 0.04;
+        obj.headGlowMat.opacity = ratio * 0.14;
       }
     }
     const litRatio = litCount / Math.max(1, renderState.lanterns.length);
-    ambient.intensity = 0.15 + 0.55 * litRatio;
-    scene.fog.density = 0.042 - litRatio * 0.022;
 
-    const moteIds = new Set(renderState.motes.map((m) => m.id));
-    for (const [id, mesh] of moteMap.entries()) {
-      if (!moteIds.has(id)) {
-        scene.remove(mesh);
-        moteMap.delete(id);
+    // Physical lighting & Sky/Fog atmosphere (Night vs Menu Orbit vs Dawn Cinematic)
+    const mode = camCtrl?.mode ?? (camCtrl && typeof camCtrl.angleRad === "number" ? "benchmark" : "play");
+    const cx = renderState.night === 2 ? 35 : 0;
+
+    if (mode === "dawnCinematic") {
+      const p = Math.max(0, Math.min(1, camCtrl.progress ?? 0));
+      if (p < 0.5) {
+        scene.background.lerpColors(nightSkyColor, preDawnSkyColor, p * 2);
+      } else {
+        scene.background.lerpColors(preDawnSkyColor, dawnSkyColor, (p - 0.5) * 2);
       }
+      scene.fog.color.copy(scene.background);
+      scene.fog.near = 25 + p * 35;
+      scene.fog.far = 75 + p * 110;
+      ambient.intensity = 0.15 + p * 0.85;
+      hemiLight.color.lerpColors(nightHemiSky, dawnHemiSky, p);
+      hemiLight.intensity = 0.25 + p * 0.95;
+      moonLight.color.lerpColors(nightMoonColor, dawnSunColor, p);
+      moonLight.intensity = 0.35 + p * 1.55;
+      moonLight.position.set(cx, 8 + p * 36, -85);
+      moonLight.target.position.set(cx, 0, 0);
+      renderer.toneMappingExposure = 1.24 + p * 0.22;
+
+      sunGroup.visible = true;
+      sunGroup.position.set(cx, -8 + p * 34, -95);
+      const fadeOutShades = p > 0.65 ? [] : renderState.shades;
+      shadePool.update(fadeOutShades, renderState.player.pos, timeSec, colorblind, renderState.lanterns);
+    } else {
+      sunGroup.visible = false;
+      scene.background.copy(nightSkyColor);
+      scene.fog.color.copy(nightSkyColor);
+      hemiLight.color.copy(nightHemiSky);
+      moonLight.color.copy(nightMoonColor);
+      moonLight.position.set(cx - 24, 46, -20);
+      moonLight.target.position.set(cx, 0, 0);
+      renderer.toneMappingExposure = 1.24;
+
+      if (mode === "menuOrbit") {
+        ambient.intensity = 0.22;
+        hemiLight.intensity = 0.42;
+        moonLight.intensity = 0.55;
+        scene.fog.near = 28;
+        scene.fog.far = 96;
+      } else {
+        ambient.intensity = 0.08 + 0.24 * litRatio;
+        hemiLight.intensity = 0.22 + 0.14 * litRatio;
+        moonLight.intensity = 0.28 + 0.12 * litRatio;
+        scene.fog.near = 10 + litRatio * 7;
+        scene.fog.far = 40 + litRatio * 24;
+      }
+      shadePool.update(renderState.shades, renderState.player.pos, timeSec, colorblind, renderState.lanterns);
     }
-    for (const m of renderState.motes) {
-      if (!moteMap.has(m.id)) {
-        const spec = FIREFLY_TYPES[m.size] ?? FIREFLY_TYPES.small;
-        const group = new THREE.Group();
-        const core = new THREE.Mesh(
-          new THREE.SphereGeometry(0.18 * spec.scale, 10, 8),
-          new THREE.MeshBasicMaterial({ color: PALETTE.fireflyCore })
-        );
-        const halo = new THREE.Mesh(
-          new THREE.SphereGeometry(0.36 * spec.scale, 10, 8),
-          new THREE.MeshBasicMaterial({ color: PALETTE.fireflyGlow, transparent: true, opacity: 0.48 })
-        );
-        const groundGlow = new THREE.Mesh(
-          new THREE.CircleGeometry(1.6 * spec.scale, 16),
-          new THREE.MeshBasicMaterial({ color: PALETTE.fireflyGlow, transparent: true, opacity: 0.22, depthWrite: false })
-        );
-        groundGlow.rotation.x = -Math.PI / 2;
-        groundGlow.position.y = -0.68;
-        const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
-        const wingL = new THREE.Mesh(new THREE.PlaneGeometry(0.26 * spec.scale, 0.12 * spec.scale), wingMat);
-        wingL.position.set(-0.18 * spec.scale, 0.05, 0);
-        const wingR = wingL.clone();
-        wingR.position.x = 0.18 * spec.scale;
-        group.add(core, halo, groundGlow, wingL, wingR);
-        moteMap.set(m.id, group);
-        scene.add(group);
-      }
-      const mesh = moteMap.get(m.id);
-      mesh.position.set(
+
+    const moteCount = Math.min(renderState.motes.length, motePool.core.instanceMatrix.count);
+    for (let i = 0; i < moteCount; i++) {
+      const m = renderState.motes[i];
+      const spec = FIREFLY_TYPES[m.size] ?? FIREFLY_TYPES.small;
+      instDummy.position.set(
         m.pos[0] + Math.sin(timeSec * 2.5 + m.pos[2]) * 0.14,
-        m.pos[1] + 0.72 + Math.sin(timeSec * 3.8 + m.pos[0]) * 0.18,
+        m.pos[1] + 0.52 + Math.sin(timeSec * 3.8 + m.pos[0]) * 0.14,
         m.pos[2]
       );
-      mesh.rotation.y = timeSec * 3;
+      instDummy.rotation.set(0, timeSec * 3, 0);
+      instDummy.scale.setScalar(spec.scale);
+      instDummy.updateMatrix();
+      motePool.core.setMatrixAt(i, instDummy.matrix);
+      motePool.halo.setMatrixAt(i, instDummy.matrix);
+      motePool.glow.setMatrixAt(i, instDummy.matrix);
+      motePool.wings.setMatrixAt(i, instDummy.matrix);
     }
+    motePool.core.count = moteCount;
+    motePool.halo.count = moteCount;
+    motePool.glow.count = moteCount;
+    motePool.wings.count = moteCount;
+    motePool.core.instanceMatrix.needsUpdate = true;
+    motePool.halo.instanceMatrix.needsUpdate = true;
+    motePool.glow.instanceMatrix.needsUpdate = true;
+    motePool.wings.instanceMatrix.needsUpdate = true;
 
-    // Attach pooled point lights to the 6 nearest fireflies
-    const nearestMotes = [...renderState.motes]
-      .sort((a, b) => distXZ(a.pos, renderState.player.pos) - distXZ(b.pos, renderState.player.pos))
-      .slice(0, moteLights.length);
+    let m1 = null;
+    let d1 = Infinity;
+    let m2 = null;
+    let d2 = Infinity;
+    for (let i = 0; i < renderState.motes.length; i++) {
+      const m = renderState.motes[i];
+      const dx = m.pos[0] - px;
+      const dz = m.pos[2] - pz;
+      const dSq = dx * dx + dz * dz;
+      if (dSq < d1) {
+        d2 = d1;
+        m2 = m1;
+        d1 = dSq;
+        m1 = m;
+      } else if (dSq < d2) {
+        d2 = dSq;
+        m2 = m;
+      }
+    }
+    const topMotes = [m1, m2];
     for (let i = 0; i < moteLights.length; i++) {
-      if (i < nearestMotes.length) {
-        const m = nearestMotes[i];
-        moteLights[i].position.set(m.pos[0], m.pos[1] + 0.9, m.pos[2]);
+      const m = topMotes[i];
+      if (m) {
+        moteLights[i].position.set(m.pos[0], m.pos[1] + 0.85, m.pos[2]);
         moteLights[i].visible = true;
       } else {
         moteLights[i].visible = false;
       }
     }
 
-    const shadeIds = new Set(renderState.shades.map((s) => s.id));
-    for (const [id, obj] of shadeMap.entries()) {
-      if (!shadeIds.has(id)) {
-        scene.remove(obj.group);
-        shadeMap.delete(id);
-      }
-    }
-    for (const s of renderState.shades) {
-      if (!shadeMap.has(s.id)) {
-        const obj = createShadeMesh();
-        shadeMap.set(s.id, obj);
-        scene.add(obj.group);
-      }
-      const obj = shadeMap.get(s.id);
-      obj.group.position.set(s.pos[0], s.pos[1] + 1.0 + Math.sin(timeSec * 4 + s.pos[2]) * 0.1, s.pos[2]);
-      obj.group.lookAt(px, s.pos[1] + 1.0, pz);
-      const isStunned = s.state === "stunned";
-      const isSpawning = s.state === "spawning";
-      const rimColor = colorblind ? PALETTE.shadeRimColorblind : PALETTE.shadeRim;
-      obj.stunRing.visible = isStunned;
-      obj.stunRing.rotation.z = timeSec * 5;
-      obj.bodyMat.transparent = isSpawning;
-      obj.bodyMat.opacity = isSpawning ? 0.45 : 1.0;
-      obj.bodyMat.color.setHex(isStunned ? PALETTE.shadeStunned : PALETTE.shadeBody);
-      obj.bodyMat.emissive.setHex(isStunned ? PALETTE.shadeStunned : rimColor);
-      obj.eyeMat.color.setHex(isStunned ? PALETTE.goldAccent : rimColor);
-    }
-
-    const drifterIds = new Set(renderState.drifters.filter((d) => d.state !== "removed").map((d) => d.id));
+    const drifterIds = new Set(renderState.drifters.filter((dr) => dr.state !== "removed").map((dr) => dr.id));
     for (const [id, obj] of drifterMap.entries()) {
       if (!drifterIds.has(id)) {
         scene.remove(obj.group);
         drifterMap.delete(id);
       }
     }
-    for (const d of renderState.drifters) {
-      if (d.state === "removed") continue;
-      if (!drifterMap.has(d.id)) {
+    for (const dr of renderState.drifters) {
+      if (dr.state === "removed") continue;
+      if (!drifterMap.has(dr.id)) {
         const obj = createDrifterMesh();
-        drifterMap.set(d.id, obj);
+        drifterMap.set(dr.id, obj);
         scene.add(obj.group);
       }
-      const obj = drifterMap.get(d.id);
-      obj.group.position.set(d.pos[0], d.pos[1] + Math.sin(timeSec * 5) * 0.2, d.pos[2]);
+      const obj = drifterMap.get(dr.id);
+      obj.group.position.set(dr.pos[0], dr.pos[1] + Math.sin(timeSec * 5) * 0.2, dr.pos[2]);
       obj.group.rotation.y = timeSec * 2.2;
       obj.parts.forEach((p, idx) => {
         p.position.y = 1.2 + Math.sin(timeSec * 8 + idx) * 0.12;
@@ -1043,37 +1028,72 @@ export function createWorldRenderer(canvas) {
       mesh.rotation.y = timeSec * 2.0;
     }
 
-    const theta = (camYawDeg * Math.PI) / 180;
-    const pitchRad = (Math.min(82, Math.max(18, camPitchDeg)) * Math.PI) / 180;
-    const camRadius = 10.2;
-    const horiz = camRadius * Math.cos(pitchRad);
-    const height = camRadius * Math.sin(pitchRad);
-    camera.position.set(px - Math.sin(theta) * horiz, py + height, pz - Math.cos(theta) * horiz);
-    camera.lookAt(px, py + 1.0, pz);
+    // Camera modes: benchmark | menuOrbit | dawnCinematic | play (with optional smooth blend)
+    if (mode === "benchmark") {
+      const a = camCtrl.angleRad;
+      camera.position.set(30 * Math.cos(a), 15, -30 * Math.sin(a));
+      camera.lookAt(0, 0, 0);
+    } else if (mode === "menuOrbit") {
+      const a = camCtrl.reducedMotion ? 0.52 : timeSec * 0.14;
+      camera.position.set(42 * Math.cos(a), 20.5, 42 * Math.sin(a));
+      camera.lookAt(0, 1.5, 0);
+    } else if (mode === "dawnCinematic") {
+      const p = Math.max(0, Math.min(1, camCtrl.progress ?? 0));
+      const reduced = Boolean(camCtrl.reducedMotion);
+      const lift = reduced ? 12 : 4 + p * 14;
+      const distBack = reduced ? 20 : 9 + p * 22;
+      const orbitA = reduced ? 0.25 : 0.15 + p * 0.45;
+      camera.position.set(px + Math.sin(orbitA) * distBack, py + lift, pz + Math.cos(orbitA) * distBack);
+      camera.lookAt(cx * 0.25, py + 4 + (reduced ? 6 : p * 10), -28);
+    } else {
+      const theta = (camYawDeg * Math.PI) / 180;
+      const pitchRad = (Math.min(82, Math.max(18, camPitchDeg)) * Math.PI) / 180;
+      const camRadius = 10.2;
+      const horiz = camRadius * Math.cos(pitchRad);
+      const height = camRadius * Math.sin(pitchRad);
+      const desiredX = px - Math.sin(theta) * horiz;
+      const desiredY = py + height;
+      const desiredZ = pz - Math.cos(theta) * horiz;
+      const blendAlpha = camCtrl?.blendAlpha ?? 1;
+      if (blendAlpha < 1) {
+        camTarget.set(desiredX, desiredY, desiredZ);
+        camera.position.lerp(camTarget, Math.min(1, blendAlpha));
+      } else {
+        camera.position.set(desiredX, desiredY, desiredZ);
+      }
+      camera.lookAt(px, py + 1.0, pz);
+    }
+
     renderer.render(scene, camera);
+
+    const getRendererInfo = () => {
+      const gl = renderer.getContext();
+      const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      const gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+      return `Three.js r${THREE.REVISION} (${gpu})`;
+    };
+
+    const projectEdgeArrow = (worldPos, label) => {
+      projVec.set(worldPos[0], worldPos[1] + 2.0, worldPos[2]).project(camera);
+      const offScreen = projVec.z > 1 || Math.abs(projVec.x) > 0.95 || Math.abs(projVec.y) > 0.95;
+      if (!offScreen) return null;
+      const sx = projVec.z > 1 ? -projVec.x : projVec.x;
+      const sy = projVec.z > 1 ? -projVec.y : projVec.y;
+      return { id: label, angleDeg: (Math.atan2(-sy, sx) * 180) / Math.PI };
+    };
 
     let nearest = null;
     let bestD = Infinity;
     for (const l of renderState.lanterns) {
       if (l.lit) continue;
-      const d = distXZ(renderState.player.pos, l.pos);
-      if (d < bestD) {
-        bestD = d;
+      const dist = distXZ(renderState.player.pos, l.pos);
+      if (dist < bestD) {
+        bestD = dist;
         nearest = l;
       }
     }
-    let arrow = null;
-    if (nearest) {
-      const proj = new THREE.Vector3(nearest.pos[0], nearest.pos[1] + 2.5, nearest.pos[2]).project(camera);
-      const offScreen = proj.z > 1 || Math.abs(proj.x) > 0.95 || Math.abs(proj.y) > 0.95;
-      if (offScreen) {
-        const sx = proj.z > 1 ? -proj.x : proj.x;
-        const sy = proj.z > 1 ? -proj.y : proj.y;
-        const angleRad = Math.atan2(-sy, sx);
-        arrow = { id: nearest.id, angleDeg: (angleRad * 180) / Math.PI };
-      }
-    }
-    return { arrow };
+    const arrow = nearest ? projectEdgeArrow(nearest.pos, nearest.id) : null;
+    return { arrow, projectEdgeArrow, getRendererInfo };
   }
 
   function handleResize() {

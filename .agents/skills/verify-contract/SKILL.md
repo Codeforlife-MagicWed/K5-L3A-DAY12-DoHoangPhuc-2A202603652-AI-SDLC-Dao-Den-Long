@@ -1,18 +1,21 @@
 ---
 name: verify-contract
-description: Quy trình kiểm chứng Test Contract v1.2 (Đèn cạn dầu, drain, sức chứa tăng dần, luật thắng bình minh), regression và bằng chứng trước khi gắn tag phase.
+description: Quy trình kiểm chứng Test Contract v1.3 (Benchmark 3D, Soak test, Leaderboard cục bộ, Accessibility, Nhiên liệu & Bình minh), regression và bằng chứng trước khi gắn tag phase-4 / v1.0.0.
 ---
 
-# Skill: Verify Contract v1.2 & Capture Proof
+# Skill: Verify Contract v1.3 & Release Check
 
-Dùng skill này sau mọi chỉnh sửa `src/sim/`, `src/headless/`, `src/game/` và bắt buộc trước khi gắn tag `phase-3` / `phase-4`.
+Dùng skill này sau mọi chỉnh sửa `src/sim/`, `src/headless/`, `src/game/`, `src/bench/`, `src/server/` và bắt buộc trước khi gắn tag `phase-4` / `v1.0.0`.
 
 ## Các bước bắt buộc
-1. Kiểm tra đồng bộ `game.contract.json` (`contract_version: "1.2"`) với `src/sim/config.js`.
-2. Chạy `npm test`:
-   - Kiểm tra nhiên liệu đèn (hao `1/s`, châm dầu `refuel`, tắt đèn `lantern_out`, thắp lại `5` đom đóm `relight: true`).
-   - Kiểm tra Bóng Mực `drain` (đèn `fuel < 30` mất vùng an toàn, hút `5/s`, `fuel_drain` mỗi `60` tick, `+15` khi Tỏa Sáng trúng bóng đang `drain`).
-   - Kiểm tra luật thắng mới (`dawn_survived` khi `lit >= ceil(0.6 * total)`, không thắng sớm khi đủ đèn) và sức chứa tăng dần (`10 -> 20`).
-   - Kiểm tra regression Phase 1–2 không bị thay thế và tính tất định.
-3. Chạy `npm run build` bảo đảm web 3D biên dịch sạch.
-4. Cập nhật ADR, `CHANGELOG.md` (breaking changes) và bảng truy vết trong `docs/proof/phase-3/`.
+1. Kiểm tra đồng bộ `game.contract.json` (`contract_version: "1.3"`, `run_cmd`, `bench_cmd`, `soak_cmd`, `tuning`) với `src/sim/config.js`.
+2. Chạy `npm test` (`22/22` tests):
+   - Contract `v1.3`, luật Phase 3 (`dawn_survived`, nhiên liệu `100`, `drain`, sức chứa `10 -> 20`).
+   - Regression Phase 1–2 và tách biệt `creativeVariants` (chém choáng `180` tick, đom đóm 3 cỡ).
+   - `benchmarkMode` (`200` Bóng Mực `wander`, `100` đom đóm, `L1–L3` sáng `fuel: 100`, không kết thúc Đêm).
+   - `runSoak` (3 Đêm xoay vòng `0` crash) và `leaderboard.js` + `run.js --export-leaderboard`.
+3. Chạy `npm run build` để đóng gói `dist/`.
+4. Chạy trực tiếp (không sửa tay JSON kết quả):
+   - `node src/headless/soak.js --seed 7 --nights 10 --out soak.json` (`crashes === 0`, `mem_end_mb <= 1.2 * mem_start_mb`).
+   - `node src/bench/bench.js --seed 42 --duration 30 --out bench.json` (`1280×720`, kiểm `avg_fps`, `p1_low_fps`, `load_ms`, `renderer`, `peak_mem_mb`).
+5. Cập nhật `README.md`, `CHANGELOG.md`, `CREDITS.md`, `docs/notes/retro.md` và `docs/proof/phase-4/README.md`.

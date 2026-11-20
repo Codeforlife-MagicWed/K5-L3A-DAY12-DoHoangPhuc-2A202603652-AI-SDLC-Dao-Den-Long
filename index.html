@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Đảo Đèn Lồng — Ba Hòn Đảo</title>
+    <title>Đảo Đèn Lồng — Bình Minh v1.0.0</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/game/style.css" />
   </head>
@@ -28,7 +28,7 @@
 
       <div class="hud-center-top">
         <div id="hud-night-label" class="night-badge">Đêm 1 – Đảo Bến</div>
-        <div id="hud-time" class="timer">05:00</div>
+        <div id="hud-time" class="timer">04:00</div>
         <div id="hud-wind" class="wind-badge hidden">Gió mạnh!</div>
       </div>
 
@@ -38,6 +38,9 @@
       </div>
     </div>
 
+    <!-- Accessibility Visual Captions -->
+    <div id="captions" class="captions hidden"></div>
+
     <!-- Bottom HUD: Dynamic Firefly Bar (10..20) + Cooldowns -->
     <div id="hud-bottom" class="hud-bottom hidden">
       <div class="mote-bar-wrap">
@@ -45,25 +48,44 @@
         <div id="mote-slots" class="mote-slots"></div>
       </div>
       <div class="cd-box">
-        <div>Lướt [Shift]: <span id="hud-dash" class="val">Sẵn sàng</span></div>
-        <div>Tỏa Sáng [F] (3đ): <span id="hud-pulse" class="val">Sẵn sàng</span></div>
+        <div>Lướt: <span id="hud-dash" class="val">Sẵn sàng</span></div>
+        <div>Tỏa Sáng (3đ): <span id="hud-pulse" class="val">Sẵn sàng</span></div>
       </div>
     </div>
 
     <div id="prompt" class="prompt hidden"></div>
     <div id="lantern-arrow" class="lantern-arrow hidden">➤ <span id="arrow-label">L1</span></div>
+    <div id="shade-arrow" class="shade-arrow hidden">⚠ <span id="shade-arrow-label">S1</span></div>
 
-    <!-- Main / Intro / Result / Pause / Settings Overlay -->
+    <!-- Main / Intro / Result / Pause / Settings / Leaderboard Overlay -->
     <div id="overlay" class="overlay">
       <div class="panel">
         <h1 id="overlay-title">Đảo Đèn Lồng</h1>
         <p id="overlay-desc">
           Hành trình qua <strong>3 Đêm</strong>: Đảo Bến, Đảo Cau và Đảo Chuông.
-          Thu thập đom đóm, né Bóng Mực và Gió Lạc, thắp sáng mọi Đèn Lồng Lớn trước bình minh!
+          Giữ tối thiểu 60% Đèn Lồng Lớn sáng tới bình minh, né Bóng Mực và Gió Lạc!
         </p>
+
         <div id="controls-box" class="controls-box">
-          <div><b>WASD / Mũi tên:</b> Di chuyển · <b>Kéo chuột:</b> Xoay & nghiêng góc nhìn trên xuống</div>
-          <div><b>Space:</b> Nhảy · <b>Shift:</b> Lướt · <b>E:</b> Nạp đèn · <b>F:</b> Tỏa Sáng · <b>Click / J:</b> Chém ánh sáng · <b>Esc/P:</b> Tạm dừng</div>
+          <div><b>Di chuyển:</b> WASD / Mũi tên · <b>Kéo chuột:</b> Xoay & nghiêng góc nhìn</div>
+          <div><b>Nhảy:</b> Space · <b>Lướt:</b> Shift · <b>Nạp/Châm dầu:</b> E · <b>Tỏa Sáng:</b> F · <b>Chém sáng:</b> Click / J</div>
+        </div>
+
+        <div id="dialogue-box" class="dialogue-box hidden">
+          <div class="dialogue-left">
+            <div id="dang-portrait" class="dang-portrait"></div>
+            <div class="dang-name">Đăng</div>
+          </div>
+          <div class="dialogue-right">
+            <p id="dialogue-text" class="dialogue-text"></p>
+            <div class="dialogue-footer">
+              <div id="dialogue-dots" class="dialogue-dots"></div>
+              <div class="dialogue-actions">
+                <button id="dialogue-skip-btn" type="button" class="mini-btn sec-btn">Bỏ qua hướng dẫn</button>
+                <button id="dialogue-next-btn" type="button" class="mini-btn">Tiếp theo</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="settings-box" class="settings-box hidden">
@@ -79,6 +101,33 @@
             <label for="cb-toggle">Bảng màu dễ phân biệt (mù màu)</label>
             <input id="cb-toggle" type="checkbox" />
           </div>
+          <div class="setting-row">
+            <label for="rm-toggle">Giảm chuyển động (tắt rung & chớp)</label>
+            <input id="rm-toggle" type="checkbox" />
+          </div>
+          <div class="setting-row">
+            <label for="lt-toggle">Chữ lớn (×1.25)</label>
+            <input id="lt-toggle" type="checkbox" />
+          </div>
+
+          <div class="keybinds-section">
+            <div class="keybinds-header">
+              <span>Đổi phím điều khiển</span>
+              <button id="reset-keys-btn" type="button" class="mini-btn">Khôi phục mặc định</button>
+            </div>
+            <div id="keybind-warn" class="keybind-warn hidden"></div>
+            <div id="keybinds-grid" class="keybinds-grid"></div>
+          </div>
+        </div>
+
+        <div id="leaderboard-box" class="leaderboard-box hidden"></div>
+
+        <div id="score-submit-box" class="score-submit-box hidden">
+          <div class="submit-row">
+            <input id="player-name-input" type="text" maxlength="12" placeholder="Nhập tên (3-12 ký tự)..." />
+            <button id="save-score-btn" type="button" class="mini-btn">Lưu điểm</button>
+          </div>
+          <div id="save-score-msg" class="save-msg"></div>
         </div>
 
         <div id="overlay-stats" class="stats hidden"></div>
@@ -86,10 +135,23 @@
         <div class="btn-row">
           <button id="primary-btn" type="button">Bắt đầu hành trình</button>
           <button id="secondary-btn" type="button" class="sec hidden">Cài đặt</button>
+          <button id="lb-btn" type="button" class="sec">Bảng xếp hạng</button>
           <button id="menu-btn" type="button" class="sec hidden">Về menu</button>
+        </div>
+
+        <div id="dev-night-bar" class="dev-bar">
+          <span>Chọn nhanh màn (Dev):</span>
+          <button id="dev-n1" type="button" class="dev-btn">Đêm 1</button>
+          <button id="dev-n2" type="button" class="dev-btn">Đêm 2</button>
+          <button id="dev-n3" type="button" class="dev-btn">Đêm 3</button>
+          <label class="dev-fast-label">
+            <input id="dev-fast-mode" type="checkbox" /> Test nhanh (1:30/2:00/2:30)
+          </label>
         </div>
       </div>
     </div>
+
+    <button id="skip-dawn-btn" type="button" class="skip-dawn-btn hidden">Bỏ qua cảnh Bình Minh →</button>
 
     <script type="module" src="/src/game/main.js"></script>
   </body>

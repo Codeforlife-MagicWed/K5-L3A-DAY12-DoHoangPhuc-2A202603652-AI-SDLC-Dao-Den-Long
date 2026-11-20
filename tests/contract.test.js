@@ -5,10 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { CONSTANTS, TUNING, distXZ } from "../src/sim/config.js";
+import { getSurfaceHeights } from "../src/sim/maps.js";
 import { createSimulation } from "../src/sim/simulation.js";
+
+import { readLeaderboard, addLeaderboardEntry } from "../src/server/leaderboard.js";
+import { runSoak } from "../src/headless/soak.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const CLI_PATH = path.join(REPO_ROOT, "src", "headless", "cli.js");
+const RUN_PATH = path.join(REPO_ROOT, "src", "server", "run.js");
 
 function runCli(args) {
   return spawnSync(process.execPath, [CLI_PATH, ...args], {
@@ -22,9 +27,12 @@ function parseJsonl(filePath) {
   return raw.split(/\r?\n/).map((line) => JSON.parse(line));
 }
 
-test("game.contract.json v1.2 tuning matches src/sim/config.js", () => {
+test("game.contract.json v1.3 tuning matches src/sim/config.js and exposes bench/soak commands", () => {
   const contract = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "game.contract.json"), "utf8"));
-  assert.equal(contract.contract_version, "1.2");
+  assert.equal(contract.contract_version, "1.3");
+  assert.equal(contract.run_cmd, "node src/server/run.js");
+  assert.equal(contract.bench_cmd, "node src/bench/bench.js");
+  assert.equal(contract.soak_cmd, "node src/headless/soak.js");
   assert.deepEqual(contract.tuning, TUNING);
 });
 
@@ -531,4 +539,105 @@ test("Creative mode spawns more fireflies and moves medium/large ones while head
   const simHeadlessDensity = createSimulation({ seed: 10, night: 1, creativeVariants: false });
   assert.ok(sim3dDensity.getSnapshot().motes_active > 20);
   assert.equal(simHeadlessDensity.getSnapshot().motes_active, 20);
+});
+
+test("Creative light slash stuns shades for 180 ticks (3.0s) in front arc", () => {
+  const sim = createSimulation({
+    seed: 2,
+    night: 1,
+    creativeVariants: true,
+    scenario: {
+      player: { pos: [0, 0, 0], carried: 0, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [{ id: "S1", pos: [0, 0.8, 2], state: "wander" }]
+    }
+  });
+  const evs = sim.step({ slash: true });
+  assert.ok(evs.some((e) => e.name === "creative_slash" && e.data.hit_ids.includes("S1")));
+  const snap = sim.getSnapshot();
+  assert.equal(snap.shades[0].state, "stunned");
+  // Stays stunned after 170 ticks, recovers after 180 ticks
+  for (let i = 0; i < 170; i++) sim.step(null);
+  assert.equal(sim.getSnapshot().shades[0].state, "stunned");
+  for (let i = 0; i < 12; i++) sim.step(null);
+  assert.notEqual(sim.getSnapshot().shades[0].state, "stunned");
+});
+
+test("Benchmark mode spawns 200 shades, 100 motes, lights L1-L3 at 100 fuel, and prevents game over", () => {
+  const sim = createSimulation({ seed: 42, night: 3, benchmarkMode: true });
+  const snap0 = sim.getSnapshot();
+  assert.equal(snap0.shades.length, 200);
+  assert.equal(snap0.motes.length, 100);
+  assert.equal(snap0.lanterns.filter((l) => l.lit).length, 3);
+  for (let i = 0; i < 120; i++) sim.step(null);
+  const snap1 = sim.getSnapshot();
+  assert.equal(snap1.state, "playing");
+  assert.equal(snap1.lanterns.find((l) => l.id === "L1").fuel, 100);
+  assert.ok(snap1.shades.every((s) => s.state === "wander"));
+});
+
+test("Soak test runs multiple rotating nights cleanly with 0 crashes", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddl-soak-"));
+  const out = path.join(tmp, "soak.json");
+  const report = runSoak(["--seed", "7", "--nights", "3", "--out", out]);
+  assert.equal(report.nights, 3);
+  assert.equal(report.crashes, 0);
+  assert.equal(report.results.length, 3);
+  assert.ok(report.results.every((r) => r === "won" || r === "lost"));
+  assert.ok(fs.existsSync(out));
+});
+
+test("Leaderboard validates names, sorts top 10, persists on disk, and exports via run.js", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddl-lb-"));
+  const lbPath = path.join(tmp, "leaderboard.json");
+  const exportPath = path.join(tmp, "exported.json");
+
+  assert.throws(() => addLeaderboardEntry({ name: "ab", score: 100, nights_won: 1, seed: 1 }, lbPath));
+  assert.throws(() => addLeaderboardEntry({ name: "bad name!", score: 100, nights_won: 1, seed: 1 }, lbPath));
+
+  for (let i = 1; i <= 12; i++) {
+    addLeaderboardEntry({ name: `May_${i}`, score: i * 100, nights_won: i % 4, seed: i }, lbPath);
+  }
+  const board = readLeaderboard(lbPath);
+  assert.equal(board.entries.length, 10);
+  assert.equal(board.entries[0].score, 1200);
+  assert.equal(board.entries[9].score, 300);
+
+  const expRes = spawnSync(process.execPath, [RUN_PATH, "--export-leaderboard", exportPath], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, DDL_LEADERBOARD_PATH: lbPath },
+    encoding: "utf8"
+  });
+  assert.equal(expRes.status, 0, expRes.stderr);
+  const exported = JSON.parse(fs.readFileSync(exportPath, "utf8"));
+  assert.equal(exported.entries.length, 10);
+  assert.equal(exported.entries[0].name, "May_12");
+});
+
+test("Night 3 terrain logic: creative fireflies stay on valid tier surfaces and shades climb to upper tiers", () => {
+  const sim = createSimulation({ seed: 14, night: 3, creativeVariants: true });
+  for (let i = 0; i < 600; i++) sim.step(null);
+  const snap = sim.getSnapshot();
+  for (const m of snap.motes) {
+    const heights = getSurfaceHeights(3, m.pos[0], m.pos[2]);
+    assert.ok(heights.some((h) => Math.abs(h - m.pos[1]) < 0.05), `Firefly ${m.id} at ${m.pos} floating off surface ${heights}`);
+  }
+
+  // Shade chasing player/lantern onto Tier 2 (R <= 8, Y = 6) rises smoothly onto Y=6 instead of staying underground
+  const simShade = createSimulation({
+    seed: 15,
+    night: 3,
+    scenario: {
+      player: { pos: [0, 6, -4], carried: 0, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      random_drifters: false,
+      motes: [],
+      shades: [{ id: "S1", pos: [0, 0, 5], state: "chase" }]
+    }
+  });
+  for (let i = 0; i < 90; i++) simShade.step(null);
+  assert.ok(simShade.getSnapshot().shades[0].pos[1] >= 5.5, "Shade should rise onto Tier 2 plateau instead of clipping underground");
 });
