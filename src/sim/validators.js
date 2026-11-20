@@ -34,7 +34,7 @@ export function validateScenario(scenario) {
   if (scenario.player !== undefined) {
     if (!isPlainObject(scenario.player)) throw new ContractInputError("scenario.player must be an object");
     if (scenario.player.pos !== undefined) assertVec3(scenario.player.pos, "scenario.player.pos");
-    for (const k of ["carried", "flames", "invuln_ticks", "dash_cd_ticks", "pulse_cd_ticks", "charm_ticks"]) {
+    for (const k of ["carried", "flames", "invuln_ticks", "dash_cd_ticks", "pulse_cd_ticks", "charm_ticks", "successful_lights"]) {
       if (scenario.player[k] !== undefined) assertNonNegInt(scenario.player[k], `scenario.player.${k}`);
     }
   }
@@ -65,6 +65,9 @@ export function validateScenario(scenario) {
       }
       assertVec3(s.pos, `scenario.shades[${i}].pos`);
       if (s.state_ticks_left !== undefined) assertNonNegInt(s.state_ticks_left, `scenario.shades[${i}].state_ticks_left`);
+      if (s.target_lantern_id !== undefined && s.target_lantern_id !== null && typeof s.target_lantern_id !== "string") {
+        throw new ContractInputError(`scenario.shades[${i}].target_lantern_id must be a string or null`);
+      }
     }
   }
   if (scenario.drifters !== undefined) {
@@ -98,6 +101,12 @@ export function validateScenario(scenario) {
       if (l.deposited !== undefined) assertNonNegInt(l.deposited, `scenario.lanterns[${i}].deposited`);
       if (l.lit !== undefined && typeof l.lit !== "boolean") {
         throw new ContractInputError(`scenario.lanterns[${i}].lit must be boolean`);
+      }
+      if (l.ever_lit !== undefined && typeof l.ever_lit !== "boolean") {
+        throw new ContractInputError(`scenario.lanterns[${i}].ever_lit must be boolean`);
+      }
+      if (l.fuel !== undefined && (typeof l.fuel !== "number" || !Number.isFinite(l.fuel) || l.fuel < 0 || l.fuel > 100)) {
+        throw new ContractInputError(`scenario.lanterns[${i}].fuel must be a number in [0, 100]`);
       }
     }
   }

@@ -22,13 +22,15 @@ function parseJsonl(filePath) {
   return raw.split(/\r?\n/).map((line) => JSON.parse(line));
 }
 
-test("game.contract.json v1.1 tuning matches src/sim/config.js", () => {
+test("game.contract.json v1.2 tuning matches src/sim/config.js", () => {
   const contract = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "game.contract.json"), "utf8"));
-  assert.equal(contract.contract_version, "1.1");
+  assert.equal(contract.contract_version, "1.2");
   assert.deepEqual(contract.tuning, TUNING);
 });
 
-test("Night 1 regression: pickup, deposit (+10 per deposited mote), light lantern, and win", () => {
+// UPDATED FOR TICKET-03 (Phase 3): Replaced old Phase 1/2 "all_lit early win" and "+10/mote + time bonus"
+// assertion with Phase 3 rules: lighting 5/5 does NOT end early, +5/mote, win at dawn with >= 60% lit (dawn_survived).
+test("Night 1 Ticket-03 win rule: lighting lantern keeps game playing; surviving to dawn with >=3/5 lit wins (dawn_survived)", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddl-win-"));
   const scenarioPath = path.join(tmp, "scenario.json");
   const inputsPath = path.join(tmp, "inputs.json");
@@ -44,16 +46,15 @@ test("Night 1 regression: pickup, deposit (+10 per deposited mote), light lanter
       shades: [],
       lanterns: [
         { id: "L1", pos: [0, 0, 5], deposited: 0, lit: false },
-        { id: "L2", lit: true },
-        { id: "L3", lit: true },
-        { id: "L4", lit: true },
-        { id: "L5", lit: true }
+        { id: "L2", lit: true, fuel: 100 },
+        { id: "L3", lit: true, fuel: 100 },
+        { id: "L4", lit: false },
+        { id: "L5", lit: false }
       ],
-      time_left_s: 100
+      time_left_s: 3
     })
   );
 
-  // Run +Z at 6.0 m/s for ~55 ticks (past accel 0.1s), stop and interact
   fs.writeFileSync(
     inputsPath,
     JSON.stringify({
@@ -65,7 +66,7 @@ test("Night 1 regression: pickup, deposit (+10 per deposited mote), light lanter
     })
   );
 
-  const res = runCli(["--seed", "7", "--night", "1", "--scenario", scenarioPath, "--inputs", inputsPath, "--ticks", "120", "--out", outPath]);
+  const res = runCli(["--seed", "7", "--night", "1", "--scenario", scenarioPath, "--inputs", inputsPath, "--ticks", "240", "--out", outPath]);
   assert.equal(res.status, 0, res.stderr);
 
   const lines = parseJsonl(outPath);
@@ -74,13 +75,17 @@ test("Night 1 regression: pickup, deposit (+10 per deposited mote), light lanter
   assert.ok(events.some((e) => e.name === "night_start" && e.data.night === 1));
   assert.ok(events.some((e) => e.name === "mote_picked" && e.data.carried === 10));
   assert.ok(events.some((e) => e.name === "deposit" && e.data.lantern_id === "L1" && e.data.amount === 10));
-  assert.ok(events.some((e) => e.name === "lantern_lit" && e.data.lantern_id === "L1"));
-  assert.ok(events.some((e) => e.name === "game_over" && e.data.result === "won" && e.data.reason === "all_lit"));
+  const litEv = events.find((e) => e.name === "lantern_lit" && e.data.lantern_id === "L1");
+  assert.ok(litEv && litEv.data.relight === false);
+  // Game must continue after lighting L1 until dawn (tick 180 for 3s)
+  const over = events.find((e) => e.name === "game_over");
+  assert.deepEqual(over.data, { result: "won", reason: "dawn_survived" });
+  assert.equal(over.tick, 180);
 
   const end = lines.at(-1);
   assert.equal(end.state, "won");
-  // 10 * 10 (deposit) + 100 (lantern) + floor(timeLeft) * 2 + 3 * 50
-  assert.ok(end.score >= 100 + 100 + 150);
+  // 10*5 (deposit) + 100 (L1) + 3*50 (lit dawn base) + fuel bonuses + 3*50 (flames)
+  assert.ok(end.score >= 50 + 100 + 150 + 150);
 });
 
 test("Night 1 regression: safe_radius blocks shades and pulse stuns + pushes 4m", () => {
@@ -364,4 +369,166 @@ test("Clarifications: Night 3 spawns at (0,0,-15), scheduled shades spawn for 60
   for (let i = 0; i < 60; i++) simSpawn.step(null);
   const at360 = simSpawn.getSnapshot().shades;
   assert.equal(at360[0].state, "wander");
+});
+
+test("Creative light slash pushes/stuns shades in 3D mode but is disabled in headless mode", () => {
+  const scenario = {
+    player: { pos: [0, 0, 0], carried: 0, flames: 3 },
+    random_motes: false,
+    random_shades: false,
+    motes: [],
+    shades: [{ id: "S1", pos: [0, 0.8, 2.5], state: "chase" }]
+  };
+
+  const sim3d = createSimulation({ seed: 1, night: 1, scenario, creativeVariants: true });
+  const ev3d = sim3d.step({ slash: true });
+  assert.ok(ev3d.some((e) => e.name === "creative_slash" && e.data.hit_ids[0] === "S1"));
+  assert.equal(sim3d.getSnapshot().shades[0].state, "stunned");
+
+  const simHeadless = createSimulation({ seed: 1, night: 1, scenario, creativeVariants: false });
+  const evHeadless = simHeadless.step({ slash: true });
+  assert.equal(evHeadless.some((e) => e.name === "creative_slash"), false);
+  assert.equal(simHeadless.getSnapshot().shades[0].state, "chase");
+});
+
+test("Phase 3 Fuel, Refuel, Lantern Out, Relight (5 motes), and Scaling Capacity", () => {
+  const sim = createSimulation({
+    seed: 2,
+    night: 1,
+    scenario: {
+      player: { pos: [0, 0, 25], carried: 8, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [],
+      lanterns: [{ id: "L1", pos: [0, 0, 25], lit: true, fuel: 1.0, ever_lit: true }]
+    }
+  });
+
+  // 1) Refuel 8 motes at fuel=1.0 (after 1 tick decay -> 59/60): used = min(8, ceil((6000-59)/600)) = 8 -> fuel = 81.0
+  const evRefuel = sim.step({ interact: true });
+  const refuel = evRefuel.find((e) => e.name === "refuel");
+  assert.ok(refuel && refuel.data.amount === 8 && refuel.data.fuel === 81);
+  assert.equal(sim.getSnapshot().player.carried, 0);
+  sim.step({ interact: false });
+
+  // 2) With carried = 0 (used = 0), interacting emits no refuel event
+  const evEmpty = sim.step({ interact: true });
+  assert.equal(evEmpty.some((e) => e.name === "refuel"), false);
+
+  // 3) Lantern expires at fuel<=0 -> lantern_out, relight with 5 motes -> capacity increases to 12
+  const simOut = createSimulation({
+    seed: 3,
+    night: 1,
+    scenario: {
+      player: { pos: [0, 0, 25], carried: 5, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [],
+      lanterns: [{ id: "L1", pos: [0, 0, 25], lit: true, fuel: 0.05 }]
+    }
+  });
+  let outEv = null;
+  for (let i = 0; i < 10; i++) {
+    const evs = simOut.step(null);
+    outEv = evs.find((e) => e.name === "lantern_out") ?? outEv;
+  }
+  assert.ok(outEv && outEv.data.lantern_id === "L1");
+  assert.equal(simOut.getSnapshot().lanterns[0].fuel, 0);
+  assert.equal(simOut.getSnapshot().lanterns[0].ever_lit, true);
+
+  const relightEvs = simOut.step({ interact: true });
+  const litEv = relightEvs.find((e) => e.name === "lantern_lit");
+  assert.ok(litEv && litEv.data.relight === true);
+  assert.equal(simOut.getSnapshot().player.capacity, 12);
+  assert.equal(simOut.getSnapshot().lanterns[0].relit_count, 1);
+});
+
+test("Phase 3 Shade drain on weak lantern (fuel < 30), fuel_drain event at 60 ticks, and +15 drain stun bonus", () => {
+  const sim = createSimulation({
+    seed: 5,
+    night: 1,
+    scenario: {
+      player: { pos: [0, 0, 0], carried: 3, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [{ id: "S1", pos: [0, 0, 24], state: "wander" }],
+      lanterns: [{ id: "L1", pos: [0, 0, 25], lit: true, fuel: 25 }]
+    }
+  });
+
+  // Shade is within 2m of L1 (fuel < 30), enters drain and emits fuel_drain after 60 ticks
+  let drainEv = null;
+  for (let i = 0; i < 65; i++) {
+    const evs = sim.step(null);
+    drainEv = evs.find((e) => e.name === "fuel_drain") ?? drainEv;
+  }
+  assert.ok(drainEv && drainEv.data.lantern_id === "L1" && drainEv.data.shade_id === "S1");
+  assert.equal(sim.getSnapshot().shades[0].state, "drain");
+
+  // Move player scenario near draining shade and Pulse -> awards +15 instead of +5
+  const simStun = createSimulation({
+    seed: 5,
+    night: 1,
+    scenario: {
+      player: { pos: [0, 0, 22], carried: 3, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [{ id: "S1", pos: [0, 0.8, 25], state: "drain", target_lantern_id: "L1" }],
+      lanterns: [{ id: "L1", pos: [0, 0, 25], lit: true, fuel: 25 }]
+    }
+  });
+  simStun.step({ pulse: true });
+  assert.equal(simStun.getSnapshot().score, 15);
+  assert.equal(simStun.getSnapshot().shades[0].state, "stunned");
+});
+
+test("Phase 3 Dawn threshold: loses with reason 'dawn' when lit lanterns < ceil(0.6 * total)", () => {
+  const sim = createSimulation({
+    seed: 1,
+    night: 1,
+    scenario: {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [],
+      lanterns: [
+        { id: "L1", lit: true, fuel: 100 },
+        { id: "L2", lit: true, fuel: 100 }
+      ],
+      time_left_s: 0.5
+    }
+  });
+  let over = null;
+  for (let i = 0; i < 40; i++) {
+    const evs = sim.step(null);
+    over = evs.find((e) => e.name === "game_over") ?? over;
+  }
+  assert.ok(over && over.data.result === "lost" && over.data.reason === "dawn");
+});
+
+test("Creative mode spawns more fireflies and moves medium/large ones while headless stays contract-strict", () => {
+  const sim3d = createSimulation({
+    seed: 10,
+    night: 1,
+    creativeVariants: true,
+    scenario: {
+      random_motes: true,
+      random_shades: false,
+      motes: [{ id: "M_LARGE", pos: [0, 0, 10], size: "large" }],
+      shades: []
+    }
+  });
+  const posBefore = [...sim3d.getSnapshot().motes[0].pos];
+  for (let i = 0; i < 30; i++) sim3d.step(null);
+  const posAfter = sim3d.getSnapshot().motes[0].pos;
+  assert.ok(distXZ(posBefore, posAfter) > 0.5, "Large firefly should move in 3D mode");
+
+  const sim3dDensity = createSimulation({ seed: 10, night: 1, creativeVariants: true });
+  const simHeadlessDensity = createSimulation({ seed: 10, night: 1, creativeVariants: false });
+  assert.ok(sim3dDensity.getSnapshot().motes_active > 20);
+  assert.equal(simHeadlessDensity.getSnapshot().motes_active, 20);
 });

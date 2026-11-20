@@ -1,5 +1,5 @@
 /**
- * Shared simulation configuration synchronized with game.contract.json (v1.1).
+ * Shared simulation configuration synchronized with game.contract.json (v1.2).
  */
 
 export const TICK_RATE = 60;
@@ -11,15 +11,23 @@ export const TUNING = {
   dash_duration_s: 0.2,
   dash_cooldown_s: 1.5,
   carry_capacity: 10,
+  capacity_max: 20,
   lantern_cost: 10,
+  relight_cost: 5,
   lantern_count_night1: 5,
+  fuel_max: 100,
+  fuel_decay_per_s: 1.0,
+  fuel_per_mote: 10,
+  drain_per_s: 5,
+  low_fuel_threshold: 30,
+  win_ratio: 0.6,
   pickup_radius: 1.0,
   interact_radius: 2.0,
   pulse_cost: 3,
   pulse_radius: 5.0,
-  night1_duration_s: 300,
-  night2_duration_s: 330,
-  night3_duration_s: 360,
+  night1_duration_s: 240,
+  night2_duration_s: 270,
+  night3_duration_s: 300,
   flames: 3,
   invuln_s: 1.5,
   hit_drop_ratio: 0.5,
@@ -31,10 +39,12 @@ export const TUNING = {
   shade_hit_radius: 1.0,
   fall_enabled: true,
   score: {
-    per_mote: 10,
+    per_mote: 5,
     per_lantern: 100,
+    per_relight: 40,
     per_stun: 5,
-    per_second_left: 2,
+    per_drain_stun: 15,
+    per_second_left: 0,
     per_flame_left: 50
   }
 };
@@ -53,12 +63,14 @@ export const PALETTE = {
   fireflyGlow: 0xffe58a,
   shadeBody: 0x120a1a,
   shadeRim: 0x7a3cff,
+  shadeRimColorblind: 0x00b3ff,
   shadeStunned: 0x3a3450,
   mayCoat: 0xe8e2d0,
   mayScarf: 0xc8102e,
   goldAccent: 0xf2c14e,
   drifter: 0x8fa3b8,
   uiDanger: 0xff5a5f,
+  uiDangerColorblind: 0xffffff,
   uiText: 0xf5f1e6
 };
 
@@ -77,6 +89,13 @@ export const CONSTANTS = {
   INVULN_TICKS: 90,
   RESPAWN_WAIT_TICKS: 60,
   FALL_Y_THRESHOLD: -10.0,
+  FUEL_MAX_UNITS: 6000,
+  FUEL_LOW_UNITS: 1800,
+  FUEL_MOTE_UNITS: 600,
+  FUEL_DECAY_UNITS: 1,
+  FUEL_DRAIN_UNITS: 5,
+  DRAIN_RADIUS: 2.0,
+  DRAIN_EMIT_INTERVAL: 60,
   MOTE_INITIAL_COUNT: 20,
   MOTE_MAX_COUNT: 30,
   MOTE_SPAWN_INTERVAL_TICKS: 240,
@@ -112,6 +131,11 @@ export const CONSTANTS = {
   WIND_WARN_TICKS: 120,
   WIND_SPEED: 2.0
 };
+
+export function round1(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return rounded === 0 ? 0 : rounded;
+}
 
 export function round3(value) {
   const rounded = Math.round(value * 1000) / 1000;
