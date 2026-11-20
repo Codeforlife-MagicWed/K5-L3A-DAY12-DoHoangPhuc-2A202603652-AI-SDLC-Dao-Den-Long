@@ -3,41 +3,84 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Đảo Đèn Lồng — Đêm 1: Đảo Bến</title>
+    <title>Đảo Đèn Lồng — Ba Hòn Đảo</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/game/style.css" />
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
 
+    <!-- HUD -->
     <div id="hud" class="hud hidden">
       <div class="hud-card">
-        <div class="hud-row"><span class="label">Máu (Ngọn lửa):</span> <span id="hud-flames" class="val warm">3 / 3</span></div>
-        <div class="hud-row"><span class="label">Ánh sáng mang:</span> <span id="hud-carried" class="val warm">0 / 5</span></div>
-        <div class="hud-row"><span class="label">Đèn Lồng Lớn:</span> <span id="hud-lanterns" class="val warm">0 / 5</span></div>
+        <div class="hud-row">
+          <span class="label">Ngọn Lửa:</span>
+          <span id="hud-flames" class="val gold">3 / 3</span>
+        </div>
+        <div id="hud-charm" class="hud-row hidden">
+          <span class="label">Bùa Gió:</span>
+          <span id="hud-charm-val" class="val gold">10.0s</span>
+        </div>
       </div>
+
+      <div class="hud-center-top">
+        <div id="hud-night-label" class="night-badge">Đêm 1 – Đảo Bến</div>
+        <div id="hud-time" class="timer">05:00</div>
+        <div id="hud-wind" class="wind-badge hidden">Gió mạnh!</div>
+      </div>
+
       <div class="hud-card right">
-        <div class="hud-row"><span class="label">Thời gian:</span> <span id="hud-time" class="val">180s</span></div>
-        <div class="hud-row"><span class="label">Điểm:</span> <span id="hud-score" class="val warm">0</span></div>
-        <div class="hud-row"><span class="label">Tỏa sáng [F]:</span> <span id="hud-pulse" class="val">Sẵn sàng</span></div>
+        <div class="hud-row"><span class="label">Đèn Lồng:</span> <span id="hud-lanterns" class="val gold">0 / 5</span></div>
+        <div class="hud-row"><span class="label">Điểm:</span> <span id="hud-score" class="val gold">0</span></div>
+      </div>
+    </div>
+
+    <!-- Bottom HUD: 10-slot Firefly Bar + Cooldowns -->
+    <div id="hud-bottom" class="hud-bottom hidden">
+      <div class="mote-bar-wrap">
+        <div class="mote-bar-label">Đom đóm: <span id="hud-carried">0</span> / 10</div>
+        <div id="mote-slots" class="mote-slots"></div>
+      </div>
+      <div class="cd-box">
+        <div>Lướt [Shift]: <span id="hud-dash" class="val">Sẵn sàng</span></div>
+        <div>Tỏa Sáng [F] (3đ): <span id="hud-pulse" class="val">Sẵn sàng</span></div>
       </div>
     </div>
 
     <div id="prompt" class="prompt hidden"></div>
+    <div id="lantern-arrow" class="lantern-arrow hidden">➤ <span id="arrow-label">L1</span></div>
 
+    <!-- Main / Intro / Result / Pause / Settings Overlay -->
     <div id="overlay" class="overlay">
       <div class="panel">
         <h1 id="overlay-title">Đảo Đèn Lồng</h1>
         <p id="overlay-desc">
-          Đêm 1 – Đảo Bến. Hãy giúp <strong>Mây</strong> gom đom đóm (Nhỏ +1, Vừa +2, Lớn +3)
-          để thắp lại <strong>5 Đèn Lồng Lớn</strong> và né <strong>Bóng Mực</strong>.
-          Khu vực quanh đèn đã thắp là <strong>vùng an toàn</strong>.
+          Hành trình qua <strong>3 Đêm</strong>: Đảo Bến, Đảo Cau và Đảo Chuông.
+          Thu thập đom đóm, né Bóng Mực và Gió Lạc, thắp sáng mọi Đèn Lồng Lớn trước bình minh!
         </p>
-        <div class="controls-box">
-          <div><b>WASD / Mũi tên:</b> Di chuyển &nbsp;·&nbsp; <b>Kéo chuột / Q,C:</b> Xoay camera</div>
-          <div><b>Space:</b> Nhảy &nbsp;·&nbsp; <b>E:</b> Nạp ánh sáng vào đèn &nbsp;·&nbsp; <b>F:</b> Tỏa sáng (tốn 1 ánh sáng)</div>
+        <div id="controls-box" class="controls-box">
+          <div><b>WASD / Mũi tên:</b> Di chuyển · <b>Kéo chuột / Q,C:</b> Xoay camera</div>
+          <div><b>Space:</b> Nhảy · <b>Shift:</b> Lướt (Dash) · <b>E:</b> Nạp đèn · <b>F:</b> Tỏa Sáng · <b>Esc/P:</b> Tạm dừng</div>
         </div>
+
+        <div id="settings-box" class="settings-box hidden">
+          <div class="setting-row">
+            <label for="vol-slider">Âm lượng: <span id="vol-val">65%</span></label>
+            <input id="vol-slider" type="range" min="0" max="100" value="65" />
+          </div>
+          <div class="setting-row">
+            <label for="sens-slider">Độ nhạy chuột: <span id="sens-val">0.35</span></label>
+            <input id="sens-slider" type="range" min="10" max="100" value="35" />
+          </div>
+        </div>
+
         <div id="overlay-stats" class="stats hidden"></div>
-        <button id="start-btn" type="button">Bắt đầu Đêm 1</button>
+
+        <div class="btn-row">
+          <button id="primary-btn" type="button">Bắt đầu hành trình</button>
+          <button id="secondary-btn" type="button" class="sec hidden">Cài đặt</button>
+          <button id="menu-btn" type="button" class="sec hidden">Về menu</button>
+        </div>
       </div>
     </div>
 
