@@ -1,0 +1,149 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0d0918;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #f8f1e5;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.hud {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-card {
+  background: rgba(16, 12, 30, 0.72);
+  border: 1px solid rgba(255, 194, 102, 0.35);
+  border-radius: 12px;
+  padding: 10px 14px;
+  backdrop-filter: blur(6px);
+  min-width: 210px;
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.55;
+  font-size: 14px;
+}
+
+.label {
+  color: #cbbfe0;
+}
+
+.val {
+  font-weight: 700;
+}
+
+.val.warm {
+  color: #ffbe5c;
+}
+
+.prompt {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 15, 36, 0.85);
+  border: 1px solid rgba(255, 190, 92, 0.55);
+  color: #ffe3b0;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 7, 20, 0.72);
+  backdrop-filter: blur(5px);
+  z-index: 20;
+  padding: 20px;
+}
+
+.panel {
+  max-width: 540px;
+  width: 100%;
+  background: rgba(22, 16, 40, 0.94);
+  border: 1px solid rgba(255, 185, 90, 0.45);
+  border-radius: 16px;
+  padding: 28px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.panel h1 {
+  font-size: 28px;
+  color: #ffc56b;
+  margin-bottom: 12px;
+}
+
+.panel p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #e6dcf5;
+  margin-bottom: 16px;
+}
+
+.controls-box {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #d4c8eb;
+  margin-bottom: 18px;
+}
+
+.stats {
+  font-size: 16px;
+  color: #ffd38a;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+button {
+  background: linear-gradient(135deg, #ff9f43, #ffbe5c);
+  color: #1c1026;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 26px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
