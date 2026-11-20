@@ -1,6 +1,6 @@
-# Đảo Đèn Lồng (Day 12 — AI SDLC)
+# Đảo Đèn Lồng — Ba Hòn Đảo (Day 12 — AI SDLC)
 
-Game 3D góc nhìn thứ ba: điều khiển **Mây** (người giữ đèn nhỏ tuổi đội nón lá treo đèn lồng) trên **Đêm 1 – Đảo Bến**, thu thập đom đóm để thắp sáng **5 Đèn Lồng Lớn** và né **Bóng Mực** trong sương đen.
+Game 3D góc nhìn thứ ba qua **3 Đêm**: **Đêm 1 – Đảo Bến**, **Đêm 2 – Đảo Cau**, **Đêm 3 – Đảo Chuông**. Điều khiển **Mây** thu thập đom đóm, thắp sáng các Đèn Lồng Lớn, né Bóng Mực và Gió Lạc trước bình minh.
 
 > *Video demo:* Sẽ đính kèm tại Release `v1.0.0` ở Phase 4.
 > *Tài liệu hướng dẫn gốc của lab:* [GUIDE.md](GUIDE.md) · [CHECKPOINTS.md](CHECKPOINTS.md) · [SUBMISSION.md](SUBMISSION.md) · [RULES.md](RULES.md) · [RUBRIC.md](RUBRIC.md)
@@ -24,51 +24,49 @@ Mở trình duyệt theo đường dẫn Vite hiển thị (mặc định `http:
 
 | Phím / Thao tác | Tác dụng |
 |---|---|
-| `W A S D` hoặc `Mũi tên` | Di chuyển Mây theo hướng camera |
-| Kéo chuột trái hoặc `Q` / `C` | Xoay camera quanh Mây |
-| `Space` | Nhảy |
-| `E` | Nạp ánh sáng vào Đèn Lồng Lớn gần nhất |
-| `F` | **Tỏa sáng (Pulse)**: tốn `1` ánh sáng để đẩy lùi (`5 m`) và làm choáng (`3 s`) Bóng Mực trong `8 m` |
-
-- **Vùng an toàn:** Khi một Đèn Lồng Lớn đã được thắp sáng, khu vực bán kính `6 m` quanh đèn trở thành vùng an toàn — Bóng Mực không thể tiến vào.
-
----
-
-## Cách tính điểm
-
-- Nhặt ánh sáng đom đóm: `+10` điểm / đơn vị ánh sáng (`per_mote: 10`)
-- Thắp sáng một Đèn Lồng Lớn (đủ `4` ánh sáng): `+100` điểm (`per_lantern: 100`)
-- Làm choáng Bóng Mực bằng kỹ năng Tỏa sáng: `+25` điểm / Bóng Mực (`per_stun: 25`)
-- Thưởng khi thắng (`all_lit`): `+5` điểm / giây còn lại + `+50` điểm / ngọn lửa (máu) còn lại
+| `W A S D` hoặc `Mũi tên` | Di chuyển Mây theo hướng camera (`6.0 m/s`, `7.2 m/s` khi có Bùa Gió) |
+| Kéo chuột trái hoặc `Q` / `C` | Xoay camera quanh Mây (độ nhạy chỉnh trong Cài đặt, tự lưu) |
+| `Space` | Nhảy (`7.0 m/s`, chỉ khi chạm đất) |
+| `Shift` | **Lướt (Dash)**: `14 m/s` trong `0.2 s` (giữ độ cao trên không, hồi chiêu `1.5 s`) |
+| `E` | Nạp ánh sáng vào Đèn Lồng Lớn gần nhất (`<= 2.0 m`, tối đa `10`/đèn) |
+| `F` | **Tỏa Sáng (Pulse)**: tốn `3` đom đóm, choáng `120` tick & đẩy `4 m` Bóng Mực trong `5 m` |
+| `Esc` hoặc `P` | Tạm dừng / Tiếp tục |
 
 ---
 
-## Kiểm thử & Chế độ Headless (`Test Contract v1.0`)
+## Cách tính điểm (`Contract v1.1`)
 
-Chạy toàn bộ unit test và kiểm chứng contract (1 lệnh):
+- Nạp đom đóm vào đèn: `+10` điểm / đom đóm nạp
+- Thắp sáng 1 Đèn Lồng Lớn (đủ `10` đom đóm): `+100` điểm
+- Bóng Mực trúng Tỏa Sáng: `+5` điểm / lần
+- Thưởng khi thắng mỗi Đêm: `+ floor(giây còn lại) × 2` + `+50 × Ngọn Lửa còn lại`
+
+---
+
+## Kiểm thử & Chế độ Headless (`Test Contract v1.1`)
+
+Chạy toàn bộ unit test, scenario Phase 2, regression Phase 1 và kiểm tra hiệu năng (1 lệnh):
 
 ```bash
 npm test
 ```
 
-Chạy chế độ headless (60 tick/giây cố định, không giao diện):
+Chạy chế độ headless (`--night 1 | 2 | 3`, 60 tick/giây cố định, không giao diện):
 
 ```bash
-node src/headless/cli.js --seed 42 --night 1 --ticks 300 --out out.jsonl
+node src/headless/cli.js --seed 42 --night 3 --ticks 21600 --out out.jsonl
 ```
-
-Tùy chọn: `--scenario <file.json>`, `--inputs <file.json>`, `--snapshot-every <int>`.
 
 ---
 
 ## Sáng tạo của tôi
 
-- **Đom đóm 3 kích cỡ (Nhỏ / Vừa / Lớn):** Trong bản chơi 3D tương tác, đom đóm xuất hiện với 3 kích thước và sắc độ vàng cam khác nhau: **Nhỏ (`+1`)**, **Vừa (`+2`)**, và **Lớn (`+3` ánh sáng)**.
-- **Bảo toàn Test Contract:** Tính năng phân loại kích cỡ chỉ bật ở giao diện 3D (`creativeVariants: true`); ở chế độ headless (`cli.js`), mọi đom đóm đều chuẩn hóa giá trị `+1` nên **không làm thay đổi đầu ra Test Contract v1.0** (đã kiểm chứng trong `tests/contract.test.js` test #10 và bộ test tất định).
+- **Đom đóm 3 kích cỡ (Nhỏ / Vừa / Lớn):** Trong bản chơi 3D tương tác (`creativeVariants: true`), đom đóm xuất hiện với 3 kích thước và lượng ánh sáng mang theo (**Nhỏ +1**, **Vừa +2**, **Lớn +3**).
+- **Bảo toàn Test Contract v1.1:** Ở chế độ headless (`cli.js`, `creativeVariants: false`), mọi đom đóm giữ nguyên chuẩn `+1` theo đúng Test Contract v1.1 nên không làm sai lệch đầu ra chấm tự động.
 
 ---
 
 ## Tài liệu SDLC & Bằng chứng
-- Ghi chép & giả định Phase 1: [docs/notes/phase-1.md](docs/notes/phase-1.md)
-- Bằng chứng kiểm chứng Phase 1: [docs/proof/phase-1/README.md](docs/proof/phase-1/README.md)
+- Phase 1: [docs/notes/phase-1.md](docs/notes/phase-1.md) · [docs/proof/phase-1/README.md](docs/proof/phase-1/README.md)
+- Phase 2: [docs/notes/phase-2.md](docs/notes/phase-2.md) · [docs/proof/phase-2/README.md](docs/proof/phase-2/README.md)
 - Harness AI: [AGENTS.md](AGENTS.md) · [.agents/skills/verify-contract/SKILL.md](.agents/skills/verify-contract/SKILL.md) · [.github/workflows/ci.yml](.github/workflows/ci.yml)
