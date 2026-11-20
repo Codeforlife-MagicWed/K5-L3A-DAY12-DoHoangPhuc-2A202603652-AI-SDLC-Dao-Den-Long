@@ -1,5 +1,5 @@
 /**
- * Validation helpers for Test Contract v1.0 scenario and inputs files.
+ * Validation helpers for Test Contract v1.1 scenario and inputs files.
  */
 
 export class ContractInputError extends Error {
@@ -20,6 +20,12 @@ export function assertVec3(v, label) {
   }
 }
 
+function assertNonNegInt(v, label) {
+  if (!Number.isInteger(v) || v < 0) {
+    throw new ContractInputError(`${label} must be a non-negative integer`);
+  }
+}
+
 export function validateScenario(scenario) {
   if (scenario === null || scenario === undefined) return {};
   if (!isPlainObject(scenario)) {
@@ -28,14 +34,11 @@ export function validateScenario(scenario) {
   if (scenario.player !== undefined) {
     if (!isPlainObject(scenario.player)) throw new ContractInputError("scenario.player must be an object");
     if (scenario.player.pos !== undefined) assertVec3(scenario.player.pos, "scenario.player.pos");
-    if (scenario.player.carried !== undefined && (!Number.isInteger(scenario.player.carried) || scenario.player.carried < 0)) {
-      throw new ContractInputError("scenario.player.carried must be a non-negative integer");
-    }
-    if (scenario.player.flames !== undefined && (!Number.isInteger(scenario.player.flames) || scenario.player.flames < 0)) {
-      throw new ContractInputError("scenario.player.flames must be a non-negative integer");
+    for (const k of ["carried", "flames", "invuln_ticks", "dash_cd_ticks", "pulse_cd_ticks", "charm_ticks"]) {
+      if (scenario.player[k] !== undefined) assertNonNegInt(scenario.player[k], `scenario.player.${k}`);
     }
   }
-  for (const key of ["random_motes", "random_shades"]) {
+  for (const key of ["random_motes", "random_shades", "random_drifters", "wind_enabled"]) {
     if (scenario[key] !== undefined && typeof scenario[key] !== "boolean") {
       throw new ContractInputError(`scenario.${key} must be a boolean`);
     }
@@ -61,6 +64,27 @@ export function validateScenario(scenario) {
         throw new ContractInputError(`scenario.shades[${i}] must be an object with pos`);
       }
       assertVec3(s.pos, `scenario.shades[${i}].pos`);
+      if (s.state_ticks_left !== undefined) assertNonNegInt(s.state_ticks_left, `scenario.shades[${i}].state_ticks_left`);
+    }
+  }
+  if (scenario.drifters !== undefined) {
+    if (!Array.isArray(scenario.drifters)) throw new ContractInputError("scenario.drifters must be an array");
+    for (let i = 0; i < scenario.drifters.length; i++) {
+      const d = scenario.drifters[i];
+      if (!isPlainObject(d) || d.pos === undefined) {
+        throw new ContractInputError(`scenario.drifters[${i}] must be an object with pos`);
+      }
+      assertVec3(d.pos, `scenario.drifters[${i}].pos`);
+    }
+  }
+  if (scenario.charms !== undefined) {
+    if (!Array.isArray(scenario.charms)) throw new ContractInputError("scenario.charms must be an array");
+    for (let i = 0; i < scenario.charms.length; i++) {
+      const c = scenario.charms[i];
+      if (!isPlainObject(c) || typeof c.id !== "string") {
+        throw new ContractInputError(`scenario.charms[${i}] must have string id`);
+      }
+      if (c.pos !== undefined) assertVec3(c.pos, `scenario.charms[${i}].pos`);
     }
   }
   if (scenario.lanterns !== undefined) {
@@ -71,15 +95,16 @@ export function validateScenario(scenario) {
         throw new ContractInputError(`scenario.lanterns[${i}] must have string id`);
       }
       if (l.pos !== undefined) assertVec3(l.pos, `scenario.lanterns[${i}].pos`);
-      if (l.deposited !== undefined && (!Number.isInteger(l.deposited) || l.deposited < 0)) {
-        throw new ContractInputError(`scenario.lanterns[${i}].deposited must be non-negative integer`);
-      }
+      if (l.deposited !== undefined) assertNonNegInt(l.deposited, `scenario.lanterns[${i}].deposited`);
       if (l.lit !== undefined && typeof l.lit !== "boolean") {
         throw new ContractInputError(`scenario.lanterns[${i}].lit must be boolean`);
       }
     }
   }
-  if (scenario.time_left_s !== undefined && (typeof scenario.time_left_s !== "number" || !Number.isFinite(scenario.time_left_s) || scenario.time_left_s < 0)) {
+  if (
+    scenario.time_left_s !== undefined &&
+    (typeof scenario.time_left_s !== "number" || !Number.isFinite(scenario.time_left_s) || scenario.time_left_s < 0)
+  ) {
     throw new ContractInputError("scenario.time_left_s must be a non-negative number");
   }
   return scenario;
@@ -112,7 +137,7 @@ export function validateInputs(inputs) {
     if (f.cam_yaw_deg !== undefined && (typeof f.cam_yaw_deg !== "number" || !Number.isFinite(f.cam_yaw_deg))) {
       throw new ContractInputError(`frames[${i}].cam_yaw_deg must be a finite number`);
     }
-    for (const btn of ["jump", "interact", "pulse", "dash"]) {
+    for (const btn of ["jump", "interact", "pulse", "dash", "pause"]) {
       if (f[btn] !== undefined && typeof f[btn] !== "boolean") {
         throw new ContractInputError(`frames[${i}].${btn} must be a boolean`);
       }

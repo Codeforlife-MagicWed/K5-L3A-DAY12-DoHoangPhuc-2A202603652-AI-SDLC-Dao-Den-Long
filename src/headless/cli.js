@@ -44,7 +44,7 @@ function parseArgs(argv) {
   }
 
   if (!Number.isInteger(args.seed)) throw new Error("Missing or invalid --seed <int>");
-  if (args.night !== 1) throw new Error("Invalid or unsupported --night (expected 1)");
+  if (![1, 2, 3].includes(args.night)) throw new Error("Invalid --night (expected 1, 2, or 3)");
   if (!Number.isInteger(args.ticks) || args.ticks < 0) throw new Error("Missing or invalid --ticks <int>");
   if (!args.outPath) throw new Error("Missing --out <file.jsonl>");
   if (!Number.isInteger(args.snapshotEvery) || args.snapshotEvery <= 0) {
@@ -74,14 +74,14 @@ export function runHeadless(argv) {
   const frames = validateInputs(inputsJson);
 
   const frameMap = new Map(frames.map((f) => [f.tick, f]));
-  const sim = createSimulation({ seed: args.seed, scenario, creativeVariants: false });
+  const sim = createSimulation({ seed: args.seed, night: args.night, scenario, creativeVariants: false });
 
   const lines = [];
   lines.push(JSON.stringify(sim.getSnapshot()));
 
   for (let k = 0; k < args.ticks; k++) {
     const snapBefore = sim.getSnapshot();
-    if (snapBefore.state !== "playing") break;
+    if (snapBefore.state === "won" || snapBefore.state === "lost") break;
 
     const input = frameMap.get(k) ?? null;
     const events = sim.step(input);
@@ -93,7 +93,7 @@ export function runHeadless(argv) {
     if ((k + 1) % args.snapshotEvery === 0) {
       lines.push(JSON.stringify(snapAfter));
     }
-    if (snapAfter.state !== "playing") break;
+    if (snapAfter.state === "won" || snapAfter.state === "lost") break;
   }
 
   lines.push(JSON.stringify(sim.getEndLine()));
